@@ -162,9 +162,22 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
       .catch(() => []);
     if (popupContexts.length > 0) return;
 
-    // Focus truly lost to another application
+    // Mark the loss, then debounce. Windows fires a brief focus "flicker" during the
+    // app-switch transition (a Chrome window momentarily regains focus), which would
+    // otherwise run the return branch and clear the notification before it renders.
+    // Wait, then confirm Chrome is still unfocused before notifying.
     const lossTime = Date.now();
     await setSession({ focusLossTime: lossTime });
+    await new Promise(r => setTimeout(r, 600));
+
+    const after = await getSession();
+    if (after.focusLossTime !== lossTime) return; // a return fired during the debounce
+    const wins = await chrome.windows.getAll({ populate: false }).catch(() => []);
+    if (wins.some(w => w.focused)) {
+      // Chrome regained focus (flicker / quick return) — not a real departure.
+      await setSession({ focusLossTime: null });
+      return;
+    }
 
     // Title flash on focus tabs
     for (const ft of session.focusTabs) {
@@ -174,7 +187,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     // OS notification — use a fresh unique ID each time. Windows collapses repeat
     // notifications that share an ID (silently dropping them into the Action Center
     // instead of popping a banner), so a new ID guarantees a visible banner.
-    if (session.notifId) chrome.notifications.clear(session.notifId);
+    if (after.notifId) chrome.notifications.clear(after.notifId);
     const notifId = 'dgdb-focus-loss-' + Date.now();
     console.log('[DGDB] left Chrome at', new Date().toLocaleTimeString(), '— firing notification');
     await chrome.notifications.create(notifId, {
