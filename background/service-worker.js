@@ -108,7 +108,6 @@ async function enableFocusMode() {
 async function disableFocusMode() {
   const { notifId } = await getSession();
   if (notifId) chrome.notifications.clear(notifId);
-  chrome.notifications.clear(FOCUS_LOSS_NOTIF_ID);
 
   await setSession({
     focusMode: false,
@@ -149,10 +148,6 @@ function broadcastToAllTabs(msg) {
 
 // ── FM-02: Window focus loss ──────────────────────────────────────
 
-// Fixed notification ID: re-creating with the same ID updates the single
-// notification instead of stacking duplicates, and lets us reliably clear it.
-const FOCUS_LOSS_NOTIF_ID = 'dgdb-focus-loss';
-
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   const session = await getSession();
   if (!session.focusMode) return;
@@ -176,23 +171,27 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
       chrome.tabs.sendMessage(ft.tabId, { action: 'startTitleFlash' }).catch(() => {});
     }
 
-    // OS notification
+    // OS notification — use a fresh unique ID each time. Windows collapses repeat
+    // notifications that share an ID (silently dropping them into the Action Center
+    // instead of popping a banner), so a new ID guarantees a visible banner.
+    if (session.notifId) chrome.notifications.clear(session.notifId);
+    const notifId = 'dgdb-focus-loss-' + Date.now();
     console.log('[DGDB] left Chrome at', new Date().toLocaleTimeString(), '— firing notification');
-    await chrome.notifications.create(FOCUS_LOSS_NOTIF_ID, {
+    await chrome.notifications.create(notifId, {
       type: 'basic',
       iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
       title: 'DONT GET DISTRACTED BIRD',
       message: 'YOU GOT DISTRACTED WHAT ARE YOU DOING GET BACK HERE DONT DO IT',
       requireInteraction: true,
     }).catch(err => console.warn('[DGDB] notification error:', err));
+    await setSession({ notifId });
     await addLog('left window');
 
   } else {
     // Focus returned (FM-03) — always clear the notification, even if we never
     // recorded the matching loss (self-heals a missed WINDOW_ID_NONE event).
-    chrome.notifications.clear(FOCUS_LOSS_NOTIF_ID);
-
-    const { focusLossTime } = session;
+    const { focusLossTime, notifId } = session;
+    if (notifId) chrome.notifications.clear(notifId);
     const awayMs = focusLossTime ? Date.now() - focusLossTime : 0;
     const awaySecs = Math.round(awayMs / 1000);
 
