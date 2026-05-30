@@ -149,7 +149,25 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (!session.focusMode) return;
 
   if (windowId === chrome.windows.WINDOW_ID_NONE) {
-    // Focus lost
+    // Skip if we already recorded a focus loss (onFocusChanged can fire multiple times)
+    if (session.focusLossTime) return;
+
+    // Clicking the extension icon fires WINDOW_ID_NONE (the browser window loses focus
+    // to the popup), but the popup doesn't appear in chrome.windows.getAll(). Check
+    // explicitly for an open popup context first.
+    const popupContexts = await chrome.runtime.getContexts({ contextTypes: ['POPUP'] })
+      .catch(() => []);
+    console.log('[DGDB] popupContexts:', popupContexts.length);
+    if (popupContexts.length > 0) return;
+
+    // Also guard against transient WINDOW_ID_NONE when switching between Chrome windows
+    const wins = await chrome.windows.getAll({ populate: false });
+    console.log('[DGDB] wins focused:', wins.map(w => `${w.id}:${w.focused}`).join(', '));
+    if (wins.some(w => w.focused)) return;
+
+    console.log('[DGDB] confirmed left Chrome — creating notification');
+
+    // Focus truly lost to another application
     const lossTime = Date.now();
     await setSession({ focusLossTime: lossTime });
 
@@ -158,15 +176,15 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
       chrome.tabs.sendMessage(ft.tabId, { action: 'startTitleFlash' }).catch(() => {});
     }
 
-    // OS notification (FM-02-04)
+    // OS notification
     const notifId = 'dgdb-focus-loss-' + Date.now();
-    chrome.notifications.create(notifId, {
+    await chrome.notifications.create(notifId, {
       type: 'basic',
-      iconUrl: 'assets/icon-48.png',
+      iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
       title: 'DONT GET DISTRACTED BIRD',
-      message: 'Your focus window lost focus. Come back.',
-      priority: 2,
-    });
+      message: 'YOU GOT DISTRACTED WHAT ARE YOU DOING GET BACK HERE DONT DO IT',
+      requireInteraction: true,
+    }).catch(err => console.warn('[DGDB] notification error:', err));
     await setSession({ notifId });
     await addLog('left window');
 
@@ -185,7 +203,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 
     // Inject return overlay into the active focus tab
     const lastTabId = session.lastFocusTabId;
-    if (lastTabId && awaySecs > 0) {
+    if (lastTabId) {
       chrome.scripting.executeScript({
         target: { tabId: lastTabId },
         func: showReturnOverlay,
@@ -224,7 +242,7 @@ function showReturnOverlay(awaySecs) {
   el.innerHTML = birdSVG + `
     <div>
       <div style="font-family:'Archivo Expanded',Archivo,sans-serif;font-weight:800;font-size:13px;letter-spacing:.02em;">You're back.</div>
-      <div style="font-family:'JetBrains Mono',monospace;color:#c41a1a;font-size:11px;margin-top:2px;">Away for ${awaySecs}s</div>
+      <div style="font-family:'JetBrains Mono',monospace;color:#c41a1a;font-size:11px;margin-top:2px;">Away for ${awaySecs > 0 ? awaySecs + 's' : '<1s'}</div>
     </div>`;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3000);
@@ -501,10 +519,22 @@ async function handleMessage(msg, sender) {
 
     case 'isLastFocusTab': {
       const session = await getSession();
-      const isLast = session.focusTabs.length === 1 &&
-        session.focusTabs[0].tabId === (msg.tabId ?? sender.tab?.id);
+      const tabId = msg.tabId ?? sender.tab?.id;
+      const isLast =
+        (session.focusTabs.length === 1 && session.focusTabs[0].tabId === tabId) ||
+        (session.pendingFirstNav && session.lastFocusTabId === tabId);
       return { ok: true, isLast };
     }
+
+    case 'closeCurrentTab': {
+      if (sender.tab?.id) {
+        chrome.tabs.remove(sender.tab.id).catch(() => {});
+      }
+      return { ok: true };
+    }
+
+    case 'keepalive':
+      return { ok: true };
 
     default:
       return { ok: false, error: 'unknown action' };
