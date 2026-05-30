@@ -319,12 +319,52 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   await addLog('url blocked', `→ ${destDomain}`);
 });
 
-// ── New tab injection ─────────────────────────────────────────────
+// ── Block Ctrl+T (new tab) during focus mode ─────────────────────
 
 chrome.tabs.onCreated.addListener(async (tab) => {
   const session = await getSession();
   if (!session.focusMode) return;
-  // New tabs will be caught by onActivated above
+
+  const { countdownSecs } = await getLocal();
+  const lastTabId = session.lastFocusTabId;
+  let returnUrl = '';
+  if (lastTabId) {
+    const lastTab = await chrome.tabs.get(lastTabId).catch(() => null);
+    returnUrl = lastTab?.url || '';
+  }
+
+  const params = new URLSearchParams({
+    type: 'tab',
+    tabTitle: 'new tab',
+    returnUrl,
+    focusTabId: String(lastTabId || ''),
+    countdown: String(countdownSecs),
+    tabId: String(tab.id),
+  });
+  const interstitialUrl = chrome.runtime.getURL(`interstitial/interstitial.html?${params}`);
+  chrome.tabs.update(tab.id, { url: interstitialUrl }).catch(() => {});
+  await addLog('tab blocked', 'new tab');
+});
+
+// ── Block Ctrl+N (new window) during focus mode ───────────────────
+
+chrome.windows.onCreated.addListener(async (window) => {
+  const session = await getSession();
+  if (!session.focusMode) return;
+  if (window.type !== 'normal') return;
+
+  let focusWindowId = null;
+  if (session.lastFocusTabId) {
+    const focusTab = await chrome.tabs.get(session.lastFocusTabId).catch(() => null);
+    if (focusTab) {
+      if (focusTab.windowId === window.id) return;
+      focusWindowId = focusTab.windowId;
+    }
+  }
+
+  chrome.windows.remove(window.id).catch(() => {});
+  if (focusWindowId) chrome.windows.update(focusWindowId, { focused: true }).catch(() => {});
+  await addLog('window blocked', 'new window');
 });
 
 // Also inject hotkey guard when tabs finish loading
