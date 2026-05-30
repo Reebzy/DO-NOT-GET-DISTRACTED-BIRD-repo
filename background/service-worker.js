@@ -245,7 +245,9 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   // Non-focus tab activated — show interstitial
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (!tab) return;
-  if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://'))) return;
+  // Skip extension pages, but allow new tab pages to show interstitial
+  if (tab.url && tab.url.startsWith('chrome-extension://')) return;
+  if (tab.url && tab.url.startsWith('chrome://') && !isNewTabPage(tab.url)) return;
 
   const { countdownSecs } = await getLocal();
   const lastTabId = session.lastFocusTabId;
