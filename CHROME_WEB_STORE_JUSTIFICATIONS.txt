@@ -1,0 +1,22 @@
+DONT GET DISTRACTED BIRD — Chrome Web Store Permission Justifications
+
+===== TABS =====
+The extension monitors and manages user tabs during focus sessions. It queries the active tab when focus mode starts, sends messages to content scripts in all tabs to display the focus widget and prevent navigation, updates tabs to show interstitial pages when users attempt to visit distraction websites, and tracks which tabs belong to the focus session.
+
+===== NOTIFICATIONS =====
+When the user switches focus to another application (detected by window focus loss), the extension displays an OS-level notification to remind them to return to their focus tabs. This creates friction by alerting the user to their distraction rather than blocking it outright.
+
+===== STORAGE =====
+The extension persists user settings including the whitelist of allowed domains, countdown timer duration, custom keyboard shortcuts, focus session state, and an activity log. Both session storage (for temporary focus state) and local storage (for persistent settings) are required.
+
+===== SCRIPTING =====
+The extension injects content scripts into all web pages to display a floating widget showing elapsed focus time, provide controls to add/remove focus tabs, and prevent accidental navigation by showing an interstitial confirmation page before accessing non-focus websites.
+
+===== ACTIVETAB =====
+This permission allows the extension's content scripts to execute on tabs that users interact with, enabling the focus widget to display and the navigation blocker to function. This permission is required alongside the scripting permission.
+
+===== WEBNAVIGATION =====
+The extension intercepts navigation attempts (e.g., clicking links, entering URLs) on non-focus tabs to show an interstitial page with a countdown timer. This prevents accidental distraction while allowing deliberate access if the user waits out the countdown.
+
+===== HOST PERMISSION (<all_urls>) =====
+The extension must inject content scripts and interact with any website the user might navigate to in order to detect and block distracting sites. A blanket permission is necessary since distraction websites are user-defined and unknowable in advance.
