@@ -152,9 +152,14 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     // Skip if we already recorded a focus loss (onFocusChanged can fire multiple times)
     if (session.focusLossTime) return;
 
-    // WINDOW_ID_NONE fires transiently when switching between Chrome windows on some
-    // systems. Wait briefly then confirm no Chrome window actually has focus.
-    await new Promise(r => setTimeout(r, 150));
+    // Clicking the extension icon fires WINDOW_ID_NONE (the browser window loses focus
+    // to the popup), but the popup doesn't appear in chrome.windows.getAll(). Check
+    // explicitly for an open popup context first.
+    const popupContexts = await chrome.runtime.getContexts({ contextTypes: ['POPUP'] })
+      .catch(() => []);
+    if (popupContexts.length > 0) return;
+
+    // Also guard against transient WINDOW_ID_NONE when switching between Chrome windows
     const wins = await chrome.windows.getAll({ populate: false });
     if (wins.some(w => w.focused)) return;
 
