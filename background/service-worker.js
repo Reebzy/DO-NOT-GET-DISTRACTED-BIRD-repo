@@ -342,6 +342,8 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
 
     const tab = await chrome.tabs.get(details.tabId).catch(() => null);
     if (!tab) return;
+    // Skip if tab is currently at an extension page (e.g., interstitial) — don't loop
+    if (tab.url && tab.url.startsWith('chrome-extension://')) return;
 
     const { countdownSecs } = await getLocal();
     const lastTabId = session.lastFocusTabId;
