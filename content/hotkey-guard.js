@@ -125,12 +125,20 @@
     // Not dismissible by clicking outside — only via buttons (NFR-D-09)
   }
 
+  // ── Keepalive ping ───────────────────────────────────────────────
+  // Pings the service worker every 25s to prevent suspension (suspended workers
+  // take ~10s to wake up, causing delayed notifications).
+  const _keepalive = setInterval(() => {
+    chrome.runtime.sendMessage({ action: 'keepalive' }).catch(() => {});
+  }, 25000);
+
   // ── Message listener ────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'startTitleFlash') startTitleFlash();
     if (msg.action === 'stopTitleFlash') stopTitleFlash();
     if (msg.action === 'focusOff') {
       stopTitleFlash();
+      clearInterval(_keepalive);
       window.__dgdbGuardActive = false;
     }
   });

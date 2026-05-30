@@ -1,6 +1,5 @@
 // DONT GET DISTRACTED BIRD — Background Service Worker (MV3)
 // Implements FM-01 through FM-07.
-console.log('[DGDB] service worker loaded');
 
 // ── Storage helpers ───────────────────────────────────────────────
 
@@ -146,20 +145,20 @@ function broadcastToAllTabs(msg) {
 // ── FM-02: Window focus loss ──────────────────────────────────────
 
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
-  console.log('[DGDB] onFocusChanged windowId:', windowId, 'NONE =', chrome.windows.WINDOW_ID_NONE);
   const session = await getSession();
-  console.log('[DGDB] focusMode:', session.focusMode);
   if (!session.focusMode) return;
 
   if (windowId === chrome.windows.WINDOW_ID_NONE) {
     // Skip if we already recorded a focus loss (onFocusChanged can fire multiple times)
-    if (session.focusLossTime) {
-      console.log('[DGDB] skipping focus-loss: already recorded');
-      return;
-    }
+    if (session.focusLossTime) return;
 
-    // Focus lost
-    console.log('[DGDB] focus lost — creating notification');
+    // WINDOW_ID_NONE fires transiently when switching between Chrome windows on some
+    // systems. Wait briefly then confirm no Chrome window actually has focus.
+    await new Promise(r => setTimeout(r, 150));
+    const wins = await chrome.windows.getAll({ populate: false });
+    if (wins.some(w => w.focused)) return;
+
+    // Focus truly lost to another application
     const lossTime = Date.now();
     await setSession({ focusLossTime: lossTime });
 
@@ -168,17 +167,15 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
       chrome.tabs.sendMessage(ft.tabId, { action: 'startTitleFlash' }).catch(() => {});
     }
 
-    // OS notification (FM-02-04)
+    // OS notification
     const notifId = 'dgdb-focus-loss-' + Date.now();
-    console.log('[DGDB] calling notifications.create, iconUrl:', chrome.runtime.getURL('assets/icon-48.png'));
-    const createdId = await chrome.notifications.create(notifId, {
+    await chrome.notifications.create(notifId, {
       type: 'basic',
       iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
       title: 'DONT GET DISTRACTED BIRD',
       message: 'YOU GOT DISTRACTED WHAT ARE YOU DOING GET BACK HERE DONT DO IT',
       requireInteraction: true,
-    }).catch(err => { console.warn('[DGDB] notification error:', err); return null; });
-    console.log('[DGDB] notification result:', createdId);
+    }).catch(err => console.warn('[DGDB] notification error:', err));
     await setSession({ notifId });
     await addLog('left window');
 
@@ -500,6 +497,9 @@ async function handleMessage(msg, sender) {
       }
       return { ok: true };
     }
+
+    case 'keepalive':
+      return { ok: true };
 
     default:
       return { ok: false, error: 'unknown action' };
