@@ -9,7 +9,6 @@ const DEFAULT_SESSION = {
   lastFocusTabId: null,
   pendingFirstNav: false,
   focusLossTime: null,
-  notifId: null,
 };
 
 const DEFAULT_LOCAL = {
@@ -92,7 +91,6 @@ async function enableFocusMode() {
     lastFocusTabId: activeTab?.id ?? null,
     pendingFirstNav,
     focusLossTime: null,
-    notifId: null,
   });
 
   await setBadge(true);
@@ -106,16 +104,12 @@ async function enableFocusMode() {
 }
 
 async function disableFocusMode() {
-  const { notifId } = await getSession();
-  if (notifId) chrome.notifications.clear(notifId);
-
   await setSession({
     focusMode: false,
     focusTabs: [],
     lastFocusTabId: null,
     pendingFirstNav: false,
     focusLossTime: null,
-    notifId: null,
   });
 
   stopKeepAlive();
@@ -147,15 +141,17 @@ function broadcastToAllTabs(msg) {
 }
 
 // ── FM-02: Window focus loss ──────────────────────────────────────
+// When Chrome loses focus we flash its taskbar entry (chrome.windows.drawAttention)
+// and flash the focus-tab titles. When focus returns we show a passive-aggressive
+// "welcome back" overlay. Both avoid OS notifications entirely, which Windows would
+// not reliably display.
 
-// Clear every focus-loss notification this extension has created. Using getAll
-// (rather than tracking a single id) ensures none leak into the Windows Action
-// Center — a backlog there causes Windows to stop popping fresh banners.
-async function clearFocusNotifications() {
-  const all = await chrome.notifications.getAll().catch(() => ({}));
-  for (const id of Object.keys(all)) {
-    if (id.startsWith('dgdb-focus-loss-')) chrome.notifications.clear(id);
-  }
+// Resolve the window id that holds the user's focus tab.
+async function getFocusWindowId(session) {
+  const tabId = session.lastFocusTabId ?? session.focusTabs[0]?.tabId;
+  if (tabId == null) return null;
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  return tab?.windowId ?? null;
 }
 
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
@@ -163,7 +159,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (!session.focusMode) return;
 
   if (windowId === chrome.windows.WINDOW_ID_NONE) {
-    // Skip if we already recorded a focus loss (onFocusChanged can fire multiple times)
+    // Already away — onFocusChanged can fire NONE more than once.
     if (session.focusLossTime) return;
 
     // Clicking the extension icon fires WINDOW_ID_NONE as the browser window briefly
@@ -172,103 +168,109 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
       .catch(() => []);
     if (popupContexts.length > 0) return;
 
-    // Mark the loss, then debounce. Windows fires a brief focus "flicker" during the
-    // app-switch transition (a Chrome window momentarily regains focus, firing a
-    // return event), which would otherwise clear the notification before it renders.
-    // If a real return fires during the debounce it clears focusLossTime, so we abort.
-    const lossTime = Date.now();
-    await setSession({ focusLossTime: lossTime });
-    console.log('[DGDB] focus lost at', new Date().toLocaleTimeString(), '— debouncing');
-    await new Promise(r => setTimeout(r, 600));
+    await setSession({ focusLossTime: Date.now() });
 
-    const after = await getSession();
-    if (after.focusLossTime !== lossTime) {
-      console.log('[DGDB] aborted — Chrome refocused during debounce');
-      return;
-    }
+    // Flash the Chrome taskbar icon to pull the user back.
+    const winId = await getFocusWindowId(session);
+    if (winId != null) chrome.windows.update(winId, { drawAttention: true }).catch(() => {});
 
-    // Title flash on focus tabs
+    // Flash the focus-tab titles.
     for (const ft of session.focusTabs) {
       chrome.tabs.sendMessage(ft.tabId, { action: 'startTitleFlash' }).catch(() => {});
     }
-
-    // Clear any stale notifications first so Windows doesn't suppress the new banner,
-    // then create with a fresh unique ID (Windows collapses repeats of the same ID).
-    await clearFocusNotifications();
-    const notifId = 'dgdb-focus-loss-' + Date.now();
-    await chrome.notifications.create(notifId, {
-      type: 'basic',
-      iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
-      title: 'DONT GET DISTRACTED BIRD',
-      message: 'YOU GOT DISTRACTED WHAT ARE YOU DOING GET BACK HERE DONT DO IT',
-      requireInteraction: true,
-    }).catch(err => console.warn('[DGDB] notification error:', err));
-    await setSession({ notifId });
     await addLog('left window');
 
   } else {
-    // Focus returned (FM-03).
-    // NOTE: intentionally NOT clearing the notification here while we confirm
-    // Windows is actually receiving it — returning to Chrome was wiping it before
-    // it could be inspected. Stale notifications are still prevented because the
-    // focus-loss path clears old ones before creating a new one.
+    // Focus returned to a Chrome window.
     const { focusLossTime } = session;
-    const awayMs = focusLossTime ? Date.now() - focusLossTime : 0;
-    const awaySecs = Math.round(awayMs / 1000);
+    await setSession({ focusLossTime: null });
 
-    // Stop title flash
+    // Stop the taskbar + title flashing.
+    chrome.windows.update(windowId, { drawAttention: false }).catch(() => {});
     for (const ft of session.focusTabs) {
       chrome.tabs.sendMessage(ft.tabId, { action: 'stopTitleFlash' }).catch(() => {});
     }
-    await setSession({ focusLossTime: null, notifId: null });
 
-    if (focusLossTime == null) return; // no loss recorded — nothing more to do
+    if (focusLossTime == null) return; // we never recorded a departure
+    const awaySecs = Math.round((Date.now() - focusLossTime) / 1000);
+    if (awaySecs < 1) return; // ignore sub-second focus flickers
 
-    // Inject return overlay into the active focus tab
+    // Passive-aggressive welcome-back overlay on the focus tab.
     const lastTabId = session.lastFocusTabId;
     if (lastTabId) {
       chrome.scripting.executeScript({
         target: { tabId: lastTabId },
-        func: showReturnOverlay,
+        func: showWelcomeBackOverlay,
         args: [awaySecs],
       }).catch(() => {});
     }
-
     await addLog('returned to window', `away ${awaySecs}s`);
   }
 });
 
-// Injected function for return overlay (runs in page context)
-function showReturnOverlay(awaySecs) {
-  if (document.getElementById('dgdb-return-overlay')) return;
+// Injected function for the passive-aggressive welcome-back overlay (page context).
+function showWelcomeBackOverlay(awaySecs) {
+  document.getElementById('dgdb-welcome-back')?.remove();
 
-  const el = document.createElement('div');
-  el.id = 'dgdb-return-overlay';
-  el.style.cssText = `
-    position:fixed;right:18px;bottom:18px;z-index:2147483646;
-    background:#f4f1ea;color:#100d0b;border-left:3px solid #c41a1a;
-    padding:12px 16px;display:flex;align-items:center;gap:11px;border-radius:3px;
-    box-shadow:0 2px 2px rgba(16,13,11,.20);font-family:Archivo,system-ui,sans-serif;
-    max-width:300px;animation:dgdb-in 120ms ease;
+  // Pick a passive-aggressive line; sharper the longer you were gone.
+  const lines = awaySecs >= 30
+    ? [
+        'Oh good, you’re back. We were starting to worry the work would finish itself.',
+        'Welcome back from your little expedition. Productive, was it?',
+        'There you are. Only ' + awaySecs + ' seconds of "research". Impressive restraint.',
+      ]
+    : [
+        'Oh. You’re back. Try to make it last this time.',
+        'Welcome back. The work missed you. It really did.',
+        'There you are. Eyes on the prize, yeah?',
+      ];
+  const headline = lines[Math.floor(Math.random() * lines.length)];
+
+  const away = awaySecs >= 60
+    ? Math.floor(awaySecs / 60) + 'm ' + (awaySecs % 60) + 's'
+    : awaySecs + 's';
+
+  const wrap = document.createElement('div');
+  wrap.id = 'dgdb-welcome-back';
+  wrap.style.cssText = `
+    position:fixed;top:0;left:0;right:0;z-index:2147483647;display:flex;justify-content:center;
+    pointer-events:none;font-family:Archivo,system-ui,sans-serif;
   `;
+
   const style = document.createElement('style');
-  style.textContent = '@keyframes dgdb-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}';
+  style.textContent = `
+    @keyframes dgdb-drop{from{opacity:0;transform:translateY(-100%)}to{opacity:1;transform:none}}
+    @keyframes dgdb-rise{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-100%)}}
+  `;
   document.head.appendChild(style);
 
-  const birdSVG = `<svg width="28" height="28" viewBox="0 0 240 240" aria-hidden="true">
+  const birdSVG = `<svg width="34" height="34" viewBox="0 0 240 240" aria-hidden="true" style="flex:none;">
     <path d="M150 18 L139 43 L167 31 C181 72 190 112 182 151 L181 156 L231 207 L167 197 C150 193 131 189 117 181 C103 173 92 157 86 135 C83 125 82 118 85 110 L56 117 L18 107 L58 97 C92 68 116 30 150 18 Z" fill="#c41a1a"/>
     <path d="M58 97 C78 84 92 80 99 84 C103 100 101 110 92 118 L56 117 Z" fill="#100d0b"/>
     <path d="M122 110 L196 130 L168 170 L146 138 Z" fill="#8f1010"/>
     <path d="M101 88 L108 93 L101 98 L95 93 Z" fill="#f4f1ea"/>
   </svg>`;
 
-  el.innerHTML = birdSVG + `
-    <div>
-      <div style="font-family:'Archivo Expanded',Archivo,sans-serif;font-weight:800;font-size:13px;letter-spacing:.02em;">You're back.</div>
-      <div style="font-family:'JetBrains Mono',monospace;color:#c41a1a;font-size:11px;margin-top:2px;">Away for ${awaySecs > 0 ? awaySecs + 's' : '<1s'}</div>
+  const bar = document.createElement('div');
+  bar.style.cssText = `
+    pointer-events:auto;display:flex;align-items:center;gap:14px;max-width:720px;width:calc(100% - 32px);
+    margin:14px 16px;padding:14px 18px;background:#100d0b;color:#f4f1ea;border-bottom:3px solid #c41a1a;
+    border-radius:6px;box-shadow:0 8px 24px rgba(16,13,11,.45);animation:dgdb-drop 220ms cubic-bezier(.2,.7,.3,1);
+  `;
+  bar.innerHTML = birdSVG + `
+    <div style="flex:1;min-width:0;">
+      <div style="font-family:'Archivo Expanded',Archivo,sans-serif;font-weight:800;font-size:15px;line-height:1.25;">${headline}</div>
+      <div style="font-family:'JetBrains Mono',monospace;color:#cc4444;font-size:12px;margin-top:3px;">You wandered off for ${away}.</div>
     </div>`;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3000);
+  wrap.appendChild(bar);
+  document.body.appendChild(wrap);
+
+  const dismiss = () => {
+    bar.style.animation = 'dgdb-rise 200ms cubic-bezier(.2,.7,.3,1) forwards';
+    setTimeout(() => wrap.remove(), 220);
+  };
+  bar.addEventListener('click', dismiss);
+  setTimeout(dismiss, 5000);
 }
 
 // ── FM-05: Tab interstitial ───────────────────────────────────────
@@ -385,7 +387,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // ── Keepalive ─────────────────────────────────────────────────────
 // MV3 service workers suspend after ~30s idle, and chrome.windows.onFocusChanged
 // (which fires exactly as Chrome loses focus) does not reliably wake a suspended
-// worker — so the focus-loss notification gets missed unless the worker is awake.
+// worker — so the taskbar flash gets missed unless the worker is already awake.
 //
 // chrome.alarms cannot keep it CONTINUOUSLY alive: the minimum alarm period (>=30s,
 // often clamped to 60s) is >= the 30s idle timeout, leaving dead gaps. Instead we
