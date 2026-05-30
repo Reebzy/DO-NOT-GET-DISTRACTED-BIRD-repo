@@ -1,5 +1,6 @@
 // DONT GET DISTRACTED BIRD — Background Service Worker (MV3)
 // Implements FM-01 through FM-07.
+console.log('[DGDB] service worker loaded');
 
 // ── Storage helpers ───────────────────────────────────────────────
 
@@ -145,7 +146,9 @@ function broadcastToAllTabs(msg) {
 // ── FM-02: Window focus loss ──────────────────────────────────────
 
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
+  console.log('[DGDB] onFocusChanged windowId:', windowId, 'NONE =', chrome.windows.WINDOW_ID_NONE);
   const session = await getSession();
+  console.log('[DGDB] focusMode:', session.focusMode);
   if (!session.focusMode) return;
 
   if (windowId === chrome.windows.WINDOW_ID_NONE) {

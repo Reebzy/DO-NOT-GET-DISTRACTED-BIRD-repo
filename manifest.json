@@ -6,6 +6,7 @@
 
   "permissions": [
     "tabs",
+    "windows",
     "notifications",
     "storage",
     "scripting",
