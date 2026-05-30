@@ -6,6 +6,7 @@
   const type       = params.get('type') || 'tab';         // 'tab' | 'domain'
   const dest       = params.get('dest') || '';            // destination domain (FM-06)
   const returnUrl  = params.get('returnUrl') || '';       // where to return
+  const focusTabId = Number(params.get('focusTabId')) || null; // focus tab to switch to (tab variant)
   const countdown  = Math.max(1, Number(params.get('countdown')) || 5);
   const tabId      = Number(params.get('tabId')) || null;
   const tabTitle   = params.get('tabTitle') || 'this tab';
@@ -103,10 +104,11 @@
   // ── Actions ─────────────────────────────────────────────────────
   function goBack() {
     stopCountdown();
-    if (returnUrl) {
-      chrome.runtime.sendMessage({ action: 'goBack', returnUrl }, () => {
-        // The SW will update the tab URL; also navigate directly as fallback
-        location.href = returnUrl;
+    if (returnUrl || focusTabId) {
+      chrome.runtime.sendMessage({ action: 'goBack', returnUrl, focusTabId }, () => {
+        // SW will restore this tab's URL and switch to the focus tab;
+        // also navigate directly as fallback in case SW is slow
+        if (returnUrl) location.href = returnUrl;
       });
     } else {
       history.back();
