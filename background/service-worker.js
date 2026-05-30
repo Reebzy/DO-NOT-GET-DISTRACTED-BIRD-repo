@@ -163,19 +163,17 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     if (popupContexts.length > 0) return;
 
     // Mark the loss, then debounce. Windows fires a brief focus "flicker" during the
-    // app-switch transition (a Chrome window momentarily regains focus), which would
-    // otherwise run the return branch and clear the notification before it renders.
-    // Wait, then confirm Chrome is still unfocused before notifying.
+    // app-switch transition (a Chrome window momentarily regains focus, firing a
+    // return event), which would otherwise clear the notification before it renders.
+    // If a real return fires during the debounce it clears focusLossTime, so we abort.
     const lossTime = Date.now();
     await setSession({ focusLossTime: lossTime });
+    console.log('[DGDB] focus lost at', new Date().toLocaleTimeString(), '— debouncing');
     await new Promise(r => setTimeout(r, 600));
 
     const after = await getSession();
-    if (after.focusLossTime !== lossTime) return; // a return fired during the debounce
-    const wins = await chrome.windows.getAll({ populate: false }).catch(() => []);
-    if (wins.some(w => w.focused)) {
-      // Chrome regained focus (flicker / quick return) — not a real departure.
-      await setSession({ focusLossTime: null });
+    if (after.focusLossTime !== lossTime) {
+      console.log('[DGDB] aborted — Chrome refocused during debounce');
       return;
     }
 
