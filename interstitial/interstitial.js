@@ -139,11 +139,7 @@
   function goBack() {
     stopCountdown();
     if (returnUrl || focusTabId) {
-      chrome.runtime.sendMessage({ action: 'goBack', returnUrl, focusTabId }, () => {
-        // SW will restore this tab's URL and switch to the focus tab;
-        // also navigate directly as fallback in case SW is slow
-        if (returnUrl) location.href = returnUrl;
-      });
+      chrome.runtime.sendMessage({ action: 'goBack', returnUrl, focusTabId });
     } else {
       history.back();
     }
@@ -160,9 +156,6 @@
         title: tabTitle,
         returnUrl,
         destUrl: returnUrl,
-      }, () => {
-        // The service worker navigates us — but also go directly
-        if (returnUrl) location.href = returnUrl;
       });
     } else {
       chrome.runtime.sendMessage({
@@ -171,8 +164,6 @@
         domain: dest,
         returnUrl,
         destUrl: constructDestUrl(),
-      }, () => {
-        if (constructDestUrl()) location.href = constructDestUrl();
       });
     }
   });
@@ -182,9 +173,6 @@
     chrome.runtime.sendMessage({
       action: 'endFocusMode',
       destUrl: constructDestUrl() || returnUrl,
-    }, () => {
-      const dest = constructDestUrl() || returnUrl;
-      if (dest) location.href = dest;
     });
   });
 
