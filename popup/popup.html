@@ -102,6 +102,17 @@
         <button data-secs="10" aria-pressed="false">10s</button>
       </div>
     </div>
+    <div style="padding-top: 10px; border-top: 1px solid var(--bone-3);">
+      <div style="font-size: 11.5px; color: var(--mute); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .14em; font-weight: 600;">Hotkeys</div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+        <span style="font-size: 11.5px; color: var(--ink);">Toggle focus</span>
+        <button id="hotkey-record-btn" style="margin-left: auto; background: transparent; border: 1px solid var(--bone-3); border-radius: 3px; padding: 5px 10px; font-family: var(--mono); font-size: 11px; color: var(--ink); cursor: pointer;">
+          <span id="hotkey-display">Ctrl+Shift+F</span>
+        </button>
+      </div>
+      <button id="hotkey-reset-btn" style="font-family: var(--mono); font-size: 10px; color: var(--mute-2); background: none; border: none; cursor: pointer; padding: 0;">reset</button>
+      <div id="hotkey-status" style="font-family: var(--mono); font-size: 10px; color: var(--red); margin-top: 4px; display: none;"></div>
+    </div>
   </div>
 </div>
 
