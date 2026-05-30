@@ -472,18 +472,11 @@ async function handleMessage(msg, sender) {
         const already = session.focusTabs.some(f => f.tabId === ft.tabId);
         if (!already) await setSession({ focusTabs: [...session.focusTabs, ft] });
         await addLog('tab added to focus', ft.url);
-        // Navigate back to destination (they chose to add this)
-        if (msg.destUrl && sender.tab.id) {
-          chrome.tabs.update(sender.tab.id, { url: msg.destUrl }).catch(() => {});
-        }
       } else if (msg.type === 'domain' && msg.domain) {
         const { whitelist } = await getLocal();
         if (!whitelist.includes(msg.domain)) {
           await setLocal({ whitelist: [...whitelist, msg.domain] });
           await addLog('domain whitelisted', msg.domain);
-        }
-        if (msg.destUrl && sender.tab?.id) {
-          chrome.tabs.update(sender.tab.id, { url: msg.destUrl }).catch(() => {});
         }
       }
       return { ok: true };
