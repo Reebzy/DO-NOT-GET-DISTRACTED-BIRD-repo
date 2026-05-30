@@ -7,6 +7,8 @@ let state = {
   focusTabs: [],
   whitelist: [],
   countdownSecs: 5,
+  customHotkey: 'Ctrl+Shift+F',
+  pauseHotkey: 'Ctrl+Shift+P',
   log: [],
 };
 
@@ -118,6 +120,12 @@ function renderHotkey() {
   if (display) {
     display.textContent = hotkey;
   }
+
+  const pauseHotkey = state.pauseHotkey || 'Ctrl+Shift+P';
+  const pauseDisplay = document.getElementById('pause-hotkey-display');
+  if (pauseDisplay) {
+    pauseDisplay.textContent = pauseHotkey;
+  }
 }
 
 function renderLog() {
@@ -201,13 +209,26 @@ function bindEvents() {
 
   // Hotkey record
   document.getElementById('hotkey-record-btn').addEventListener('click', () => {
-    startHotkeyRecording();
+    startHotkeyRecording('toggle');
   });
 
   // Hotkey reset
   document.getElementById('hotkey-reset-btn').addEventListener('click', async () => {
     await msg({ action: 'setHotkey', hotkey: 'Ctrl+Shift+F' });
     state.customHotkey = 'Ctrl+Shift+F';
+    renderHotkey();
+    showHotkeyStatus('Reset to default', false);
+  });
+
+  // Pause hotkey record
+  document.getElementById('pause-hotkey-record-btn').addEventListener('click', () => {
+    startHotkeyRecording('pause');
+  });
+
+  // Pause hotkey reset
+  document.getElementById('pause-hotkey-reset-btn').addEventListener('click', async () => {
+    await msg({ action: 'setPauseHotkey', hotkey: 'Ctrl+Shift+P' });
+    state.pauseHotkey = 'Ctrl+Shift+P';
     renderHotkey();
     showHotkeyStatus('Reset to default', false);
   });
@@ -262,12 +283,18 @@ function bindCollapsible(toggleId, bodyId, onOpen) {
 // ── Hotkey recording ─────────────────────────────────────────────
 
 let isRecordingHotkey = false;
+let recordingType = null;
 
-function startHotkeyRecording() {
+function startHotkeyRecording(type = 'toggle') {
   if (isRecordingHotkey) return;
   isRecordingHotkey = true;
-  const btn = document.getElementById('hotkey-record-btn');
-  const display = document.getElementById('hotkey-display');
+  recordingType = type;
+
+  const btnId = type === 'pause' ? 'pause-hotkey-record-btn' : 'hotkey-record-btn';
+  const displayId = type === 'pause' ? 'pause-hotkey-display' : 'hotkey-display';
+
+  const btn = document.getElementById(btnId);
+  const display = document.getElementById(displayId);
   const statusEl = document.getElementById('hotkey-status');
 
   btn.style.background = '#f3d9d9';
@@ -315,8 +342,12 @@ function startHotkeyRecording() {
 function stopHotkeyRecording() {
   if (!isRecordingHotkey) return;
   isRecordingHotkey = false;
-  const btn = document.getElementById('hotkey-record-btn');
-  const display = document.getElementById('hotkey-display');
+
+  const btnId = recordingType === 'pause' ? 'pause-hotkey-record-btn' : 'hotkey-record-btn';
+  const displayId = recordingType === 'pause' ? 'pause-hotkey-display' : 'hotkey-display';
+
+  const btn = document.getElementById(btnId);
+  const display = document.getElementById(displayId);
 
   if (btn._recordHandler) {
     document.removeEventListener('keydown', btn._recordHandler, true);
@@ -325,7 +356,14 @@ function stopHotkeyRecording() {
 
   btn.style.background = '';
   btn.style.borderColor = '';
-  display.textContent = state.customHotkey || 'Ctrl+Shift+F';
+
+  if (recordingType === 'pause') {
+    display.textContent = state.pauseHotkey || 'Ctrl+Shift+P';
+  } else {
+    display.textContent = state.customHotkey || 'Ctrl+Shift+F';
+  }
+
+  recordingType = null;
 }
 
 async function saveHotkey(hotkey) {
@@ -335,8 +373,14 @@ async function saveHotkey(hotkey) {
     return;
   }
 
-  await msg({ action: 'setHotkey', hotkey });
-  state.customHotkey = hotkey;
+  if (recordingType === 'pause') {
+    await msg({ action: 'setPauseHotkey', hotkey });
+    state.pauseHotkey = hotkey;
+  } else {
+    await msg({ action: 'setHotkey', hotkey });
+    state.customHotkey = hotkey;
+  }
+
   renderHotkey();
   showHotkeyStatus('Saved', false);
 }

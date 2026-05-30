@@ -19,6 +19,7 @@ const DEFAULT_LOCAL = {
   whitelist: [],      // [string] domains e.g. "linear.app"
   countdownSecs: 5,
   customHotkey: 'Ctrl+Shift+F',
+  pauseHotkey: 'Ctrl+Shift+P',
   log: [],            // [{time, event, detail}] max 200
 };
 
@@ -467,6 +468,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === 'toggle-focus-hotkey') {
     await handleMessage({ action: 'toggleFocus' }, {});
+  } else if (command === 'toggle-pause-hotkey') {
+    await handleMessage({ action: 'togglePauseFocusMode' }, {});
   }
 });
 
@@ -656,6 +659,16 @@ async function handleMessage(msg, sender) {
 
     case 'setHotkey': {
       await setLocal({ customHotkey: msg.hotkey });
+      return { ok: true };
+    }
+
+    case 'getPauseHotkey': {
+      const { pauseHotkey } = await getLocal();
+      return { ok: true, hotkey: pauseHotkey || 'Ctrl+Shift+P' };
+    }
+
+    case 'setPauseHotkey': {
+      await setLocal({ pauseHotkey: msg.hotkey });
       return { ok: true };
     }
 
