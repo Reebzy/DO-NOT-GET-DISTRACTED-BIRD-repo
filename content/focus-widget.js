@@ -203,28 +203,115 @@ function updatePauseButton(paused) {
   }
 }
 
+// ── Start Button Widget (appears when focus mode is OFF) ────────────
+
+let startButtonElement = null;
+
+function createStartButton() {
+  const container = document.createElement('div');
+  container.id = 'dgdb-start-widget';
+  container.style.cssText = `
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 2147483645;
+    background: #f4f1ea;
+    border: 1px solid #e2dccf;
+    border-radius: 3px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 2px rgba(16,13,11,.20);
+    font-family: Archivo, system-ui, sans-serif;
+  `;
+
+  const logo = document.createElement('div');
+  logo.innerHTML = getBirdSVG();
+  logo.style.cssText = 'display: flex; align-items: center; flex-shrink: 0;';
+
+  const startBtn = document.createElement('button');
+  startBtn.style.cssText = `
+    background: transparent;
+    border: 1px solid #d4cdbd;
+    border-radius: 2px;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #100d0b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    transition: background 110ms cubic-bezier(.2,.7,.3,1), color 110ms cubic-bezier(.2,.7,.3,1), border-color 110ms cubic-bezier(.2,.7,.3,1);
+    flex-shrink: 0;
+  `;
+  startBtn.setAttribute('title', 'Start focus mode');
+  startBtn.textContent = '▶';
+
+  startBtn.addEventListener('mouseenter', () => {
+    startBtn.style.background = '#c41a1a';
+    startBtn.style.color = '#fff';
+    startBtn.style.borderColor = '#c41a1a';
+  });
+
+  startBtn.addEventListener('mouseleave', () => {
+    startBtn.style.background = 'transparent';
+    startBtn.style.color = '#100d0b';
+    startBtn.style.borderColor = '#d4cdbd';
+  });
+
+  startBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'toggleFocus' }).catch(() => {});
+  });
+
+  container.appendChild(logo);
+  container.appendChild(startBtn);
+  return container;
+}
+
+function injectStartButton() {
+  if (startButtonElement) return;
+  startButtonElement = createStartButton();
+  document.body.appendChild(startButtonElement);
+}
+
+function removeStartButton() {
+  if (startButtonElement) {
+    startButtonElement.remove();
+    startButtonElement = null;
+  }
+}
+
 // Listen for focus state changes
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.action === 'focusOn') {
     injectWidget();
+    removeStartButton();
   } else if (msg.action === 'focusOff') {
     removeWidget();
+    injectStartButton();
   } else if (msg.action === 'focusPausedChanged') {
     updatePauseButton(msg.paused);
   }
 });
 
 // Check initial state on load
-(async () => {
+setTimeout(async () => {
   try {
     const resp = await chrome.runtime.sendMessage({ action: 'getState' });
-    if (resp?.state?.focusMode) {
-      injectWidget();
-      if (resp.state.focusPaused) {
-        updatePauseButton(true);
+    if (resp?.ok && resp?.state) {
+      if (resp.state.focusMode) {
+        injectWidget();
+        if (resp.state.focusPaused) {
+          updatePauseButton(true);
+        }
+      } else {
+        injectStartButton();
       }
     }
   } catch (err) {
-    // Extension context not available (e.g., on restricted pages)
+    console.log('[DGDB] Widget init error:', err.message);
   }
-})();
+}, 100);
