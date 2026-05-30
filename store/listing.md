@@ -7,7 +7,7 @@ DONT GET DISTRACTED BIRD
 Productivity
 
 ## Short description (132 chars max)
-A stern cardinal guards your focus tabs. Friction, not blockade — you can always leave, but only deliberately.
+Locks down your browser to only let you work. Try to leave and you hit a countdown. Friction, not blockade.
 
 ## Full description
 
@@ -15,7 +15,7 @@ DONT GET DISTRACTED BIRD is a focus enforcement tool for people who know they're
 
 **It's not a wellness app. It's a guard.**
 
-When Focus Mode is on, a stern heraldic cardinal watches your tabs and intercepts accidental navigation. If you stray, it catches you — and makes you choose deliberately before you go.
+When Focus Mode is on, it locks down your browser to only let you work on what you want to. Try to stray and you hit an interstitial — it gives you a few seconds to reconsider, then brings you back where you need to be, not where you want to go.
 
 ---
 
