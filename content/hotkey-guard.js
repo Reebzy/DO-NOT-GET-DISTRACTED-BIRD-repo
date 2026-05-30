@@ -27,9 +27,11 @@
   }
 
   // ── FM-04: Hotkey suppression ───────────────────────────────────
-  // NOTE: Ctrl+T/N/W cannot be intercepted at the system level — Chrome handles
-  // these before the page receives them in most contexts. This suppresses them
-  // when the page has focus (e.g. typing in a page, clicking links).
+  // NOTE: Chrome processes Ctrl+T/N/Tab/1-9 at the browser level before DOM
+  // events reach this script, so preventDefault here has no effect on those keys.
+  // The real mitigation is in the service worker: onCreated (Ctrl+T), windows.onCreated
+  // (Ctrl+N), and onActivated (Ctrl+Tab/1-9). This listener catches any edge cases
+  // where the page still receives the events.
   // Ctrl+W is handled separately via the last-tab guard below.
   document.addEventListener('keydown', (e) => {
     if (!e.ctrlKey && !e.metaKey) return;
