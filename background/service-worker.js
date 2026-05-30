@@ -148,6 +148,16 @@ function broadcastToAllTabs(msg) {
 
 // ── FM-02: Window focus loss ──────────────────────────────────────
 
+// Clear every focus-loss notification this extension has created. Using getAll
+// (rather than tracking a single id) ensures none leak into the Windows Action
+// Center — a backlog there causes Windows to stop popping fresh banners.
+async function clearFocusNotifications() {
+  const all = await chrome.notifications.getAll().catch(() => ({}));
+  for (const id of Object.keys(all)) {
+    if (id.startsWith('dgdb-focus-loss-')) chrome.notifications.clear(id);
+  }
+}
+
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   const session = await getSession();
   if (!session.focusMode) return;
@@ -182,33 +192,25 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
       chrome.tabs.sendMessage(ft.tabId, { action: 'startTitleFlash' }).catch(() => {});
     }
 
-    // OS notification — use a fresh unique ID each time. Windows collapses repeat
-    // notifications that share an ID (silently dropping them into the Action Center
-    // instead of popping a banner), so a new ID guarantees a visible banner.
-    if (after.notifId) chrome.notifications.clear(after.notifId);
+    // Clear any stale notifications first so Windows doesn't suppress the new banner,
+    // then create with a fresh unique ID (Windows collapses repeats of the same ID).
+    await clearFocusNotifications();
     const notifId = 'dgdb-focus-loss-' + Date.now();
-    console.log('[DGDB] left Chrome at', new Date().toLocaleTimeString(), '— firing notification');
-    const createdId = await chrome.notifications.create(notifId, {
+    await chrome.notifications.create(notifId, {
       type: 'basic',
       iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
       title: 'DONT GET DISTRACTED BIRD',
       message: 'YOU GOT DISTRACTED WHAT ARE YOU DOING GET BACK HERE DONT DO IT',
       requireInteraction: true,
-    }).catch(err => { console.warn('[DGDB] notification error:', err); return null; });
-    console.log('[DGDB] create returned id:', createdId);
-    // Probe: does Chrome actually hold this notification in its registry?
-    setTimeout(async () => {
-      const all = await chrome.notifications.getAll().catch(() => ({}));
-      console.log('[DGDB] notifications in registry after 1s:', Object.keys(all));
-    }, 1000);
+    }).catch(err => console.warn('[DGDB] notification error:', err));
     await setSession({ notifId });
     await addLog('left window');
 
   } else {
-    // Focus returned (FM-03) — always clear the notification, even if we never
+    // Focus returned (FM-03) — clear all focus notifications, even if we never
     // recorded the matching loss (self-heals a missed WINDOW_ID_NONE event).
-    const { focusLossTime, notifId } = session;
-    if (notifId) chrome.notifications.clear(notifId);
+    const { focusLossTime } = session;
+    await clearFocusNotifications();
     const awayMs = focusLossTime ? Date.now() - focusLossTime : 0;
     const awaySecs = Math.round(awayMs / 1000);
 
