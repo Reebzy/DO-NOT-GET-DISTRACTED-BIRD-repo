@@ -385,30 +385,42 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // ── Keepalive ─────────────────────────────────────────────────────
 // MV3 service workers suspend after ~30s idle, and chrome.windows.onFocusChanged
 // (which fires exactly as Chrome loses focus) does not reliably wake a suspended
-// worker — so the focus-loss notification gets missed. A repeating alarm keeps
-// the worker awake while Focus Mode is on: Chrome wakes the worker to deliver each
-// alarm, which resets the idle timer. This lives entirely in the worker and does
-// not depend on content-script injection.
-const KEEPALIVE_ALARM = 'dgdb-keepalive';
+// worker — so the focus-loss notification gets missed unless the worker is awake.
+//
+// chrome.alarms cannot keep it CONTINUOUSLY alive: the minimum alarm period (>=30s,
+// often clamped to 60s) is >= the 30s idle timeout, leaving dead gaps. Instead we
+// "pulse": every 20s call a trivial chrome API, which resets the idle timer. As long
+// as the worker is alive the pulse re-arms itself; and because the worker re-runs its
+// top-level code on every wake, the pulse is restarted whenever an event wakes it.
+// A backup alarm guarantees the worker is woken (and the pulse restarted) periodically.
+
+let _keepAliveTimer = null;
+
+async function keepAlivePulse() {
+  const { focusMode } = await getSession();
+  if (!focusMode) { _keepAliveTimer = null; return; }
+  try { await chrome.runtime.getPlatformInfo(); } catch (e) {} // resets idle timer
+  _keepAliveTimer = setTimeout(keepAlivePulse, 20000);
+}
 
 function startKeepAlive() {
-  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 });
+  chrome.alarms.create('dgdb-keepalive', { periodInMinutes: 1 }); // backup waker
+  if (!_keepAliveTimer) keepAlivePulse();
 }
 
 function stopKeepAlive() {
-  chrome.alarms.clear(KEEPALIVE_ALARM);
+  chrome.alarms.clear('dgdb-keepalive');
+  if (_keepAliveTimer) { clearTimeout(_keepAliveTimer); _keepAliveTimer = null; }
 }
 
-chrome.alarms.onAlarm.addListener(() => {
-  // No-op: receiving the alarm is what keeps the worker alive.
+// On every wake (alarm or startup), restart the pulse if Focus Mode is active.
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'dgdb-keepalive' && !_keepAliveTimer) keepAlivePulse();
 });
+chrome.runtime.onStartup.addListener(() => { if (!_keepAliveTimer) keepAlivePulse(); });
 
-// Re-arm the alarm on startup if Focus Mode was already on (worker may have been
-// killed and restarted while a session is active).
-chrome.runtime.onStartup.addListener(async () => {
-  const { focusMode } = await getSession();
-  if (focusMode) startKeepAlive();
-});
+// The worker also re-runs this top-level line on every cold start / wake.
+if (!_keepAliveTimer) keepAlivePulse();
 
 // ── Message handler ───────────────────────────────────────────────
 
