@@ -1,7 +1,7 @@
 {
   "name": "dont-get-distracted-bird",
   "version": "1.0.0",
-  "description": "Chrome extension — focus enforcement with a stern heraldic cardinal",
+  "description": "Chrome extension — locks down your browser to keep you focused. Friction, not blockade.",
   "type": "module",
   "scripts": {
     "build": "node build.js",

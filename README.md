@@ -1,6 +1,6 @@
 # DONT GET DISTRACTED BIRD
 
-A Chrome MV3 extension. A stern heraldic cardinal guards your focus tabs. Friction, not blockade.
+A Chrome MV3 extension. Locks down your browser to only let you work on what you want to. Friction, not blockade.
 
 ## Quick start (local testing)
 
