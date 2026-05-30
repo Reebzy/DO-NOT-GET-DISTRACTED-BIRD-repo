@@ -15,5 +15,7 @@ This permission allows the extension's content scripts to execute on tabs that u
 ===== WEBNAVIGATION =====
 The extension intercepts navigation attempts (e.g., clicking links, entering URLs) on non-focus tabs to show an interstitial page with a countdown timer. This prevents accidental distraction while allowing deliberate access if the user waits out the countdown.
 
-===== HOST PERMISSION (<all_urls>) =====
-The extension must inject content scripts and interact with any website the user might navigate to in order to detect and block distracting sites. A blanket permission is necessary since distraction websites are user-defined and unknowable in advance.
+===== OPTIONAL HOST PERMISSION (<all_urls>) =====
+This is declared as an OPTIONAL host permission, not granted at install time. It is requested at runtime — via a standard Chrome permission prompt — only when the user first starts a focus session. Once granted, it lets the extension inject its on-page focus widget (elapsed-time display, pause/end controls, the Ctrl+W last-tab guard, and the title-flash/return-overlay reminders) into the pages the user visits. A blanket scope is used because distraction websites are user-defined and unknowable in advance.
+
+The core distraction-blocking behavior — intercepting navigation and showing the interstitial confirmation page — relies only on the tabs and webNavigation permissions and works WITHOUT this host permission. If the user declines the prompt, focus mode still blocks distractions; only the on-page widget is omitted. This keeps install-time permissions minimal and puts the user in control of broad host access.

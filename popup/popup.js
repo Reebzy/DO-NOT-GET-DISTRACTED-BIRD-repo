@@ -157,6 +157,13 @@ function renderLog() {
 function bindEvents() {
   // Toggle
   document.getElementById('focus-toggle').addEventListener('click', async () => {
+    // When turning focus ON, ask for host access so the on-page widget can be injected.
+    // Must happen here (a user gesture) since the service worker can't prompt. Granted
+    // access persists, so the keyboard-shortcut path finds it already present. Blocking
+    // works regardless of the outcome, so we proceed even if the user declines.
+    if (!state.focusMode) {
+      await chrome.permissions.request({ origins: ['<all_urls>'] }).catch(() => {});
+    }
     const resp = await msg({ action: 'toggleFocus' });
     if (resp?.ok) {
       state = { ...state, ...resp.state };

@@ -129,7 +129,16 @@ async function disableFocusMode() {
   broadcastToAllTabs({ action: 'focusOff' });
 }
 
+// Host access is requested at runtime (optional_host_permissions). Content-script
+// injection (the floating widget, hotkey guard, title flash, return overlay) only
+// runs when granted. All blocking — interstitial redirects and the navigation lock —
+// works without host access, so the extension degrades gracefully if access is denied.
+async function hasHostAccess() {
+  return chrome.permissions.contains({ origins: ['<all_urls>'] }).catch(() => false);
+}
+
 async function injectContentScripts() {
+  if (!(await hasHostAccess())) return;
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
     if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) continue;
@@ -199,7 +208,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 
     // Inject return overlay into the active focus tab
     const lastTabId = session.lastFocusTabId;
-    if (lastTabId) {
+    if (lastTabId && await hasHostAccess()) {
       chrome.scripting.executeScript({
         target: { tabId: lastTabId },
         func: showReturnOverlay,
@@ -441,6 +450,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
   const session = await getSession();
   if (!session.focusMode) return;
+  if (!(await hasHostAccess())) return;
 
   chrome.scripting.executeScript({
     target: { tabId },
