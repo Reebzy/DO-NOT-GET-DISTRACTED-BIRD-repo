@@ -1,0 +1,249 @@
+// DONT GET DISTRACTED BIRD — Popup controller
+
+// ── State ─────────────────────────────────────────────────────────
+
+let state = {
+  focusMode: false,
+  focusTabs: [],
+  whitelist: [],
+  countdownSecs: 5,
+  log: [],
+};
+
+// ── Init ──────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const resp = await msg({ action: 'getState' });
+  if (resp?.ok) {
+    state = { ...state, ...resp.state };
+  }
+  render();
+  bindEvents();
+});
+
+function msg(payload) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(payload, (r) => resolve(r));
+  });
+}
+
+// ── Render ────────────────────────────────────────────────────────
+
+function render() {
+  renderToggle();
+  renderFocusTabs();
+  renderWhitelist();
+  renderCountdown();
+  renderLog();
+}
+
+function renderToggle() {
+  const toggle = document.getElementById('focus-toggle');
+  const on = state.focusMode;
+  toggle.dataset.on = on ? 'true' : 'false';
+  toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function renderFocusTabs() {
+  const label = document.getElementById('focus-tabs-label');
+  const list = document.getElementById('focus-tabs-list');
+  const on = state.focusMode;
+  const tabs = state.focusTabs || [];
+
+  if (!on) {
+    label.textContent = 'Distractions Allowed';
+    list.innerHTML = `<div class="no-tabs" style="padding-bottom:10px;">no active session.</div>`;
+    return;
+  }
+
+  label.textContent = tabs.length > 0 ? `Focus tabs · ${tabs.length}` : 'Focus tabs';
+  list.innerHTML = '';
+
+  if (tabs.length === 0) {
+    list.innerHTML = `<div class="no-tabs">add a tab or navigate somewhere.</div>`;
+    return;
+  }
+
+  for (const ft of tabs) {
+    const row = document.createElement('div');
+    row.className = 'tab-row';
+    row.innerHTML = `
+      <span class="tab-tick"></span>
+      <div class="tab-info">
+        <div class="tab-title">${esc(ft.title || ft.url)}</div>
+        <div class="tab-url">${esc(ft.url)}</div>
+      </div>
+      <button class="tab-remove" data-tabid="${ft.tabId}" aria-label="Remove ${esc(ft.title || ft.url)} from focus">×</button>
+    `;
+    list.appendChild(row);
+  }
+
+  // Spacer
+  const spacer = document.createElement('div');
+  spacer.style.height = '10px';
+  list.appendChild(spacer);
+}
+
+function renderWhitelist() {
+  const listEl = document.getElementById('wl-list');
+  const domains = state.whitelist || [];
+  listEl.innerHTML = '';
+
+  if (domains.length === 0) {
+    listEl.innerHTML = `<div class="wl-empty">no domains yet.</div>`;
+    return;
+  }
+
+  for (const d of domains) {
+    const row = document.createElement('div');
+    row.className = 'wl-domain';
+    row.innerHTML = `<span class="name">${esc(d)}</span><button class="wl-remove" data-domain="${esc(d)}" aria-label="Remove ${esc(d)}">×</button>`;
+    listEl.appendChild(row);
+  }
+}
+
+function renderCountdown() {
+  const seg = document.getElementById('countdown-seg');
+  const active = state.countdownSecs || 5;
+  seg.querySelectorAll('button').forEach(btn => {
+    const secs = Number(btn.dataset.secs);
+    btn.setAttribute('aria-pressed', secs === active ? 'true' : 'false');
+  });
+}
+
+function renderLog() {
+  const listEl = document.getElementById('log-list');
+  const clearWrap = document.getElementById('log-clear-wrap');
+  const entries = state.log || [];
+
+  if (entries.length === 0) {
+    listEl.innerHTML = `<div class="log-empty">no events yet.</div>`;
+    clearWrap.style.display = 'none';
+    return;
+  }
+
+  clearWrap.style.display = 'block';
+  listEl.innerHTML = '';
+  const container = document.createElement('div');
+  container.className = 'log-list';
+  for (const e of entries) {
+    const line = document.createElement('div');
+    line.className = 'log-entry';
+    line.innerHTML = `<span class="time">${esc(e.time)}</span> · ${esc(e.event)}${e.detail ? ' · ' + esc(e.detail) : ''}`;
+    container.appendChild(line);
+  }
+  listEl.appendChild(container);
+}
+
+// ── Events ────────────────────────────────────────────────────────
+
+function bindEvents() {
+  // Toggle
+  document.getElementById('focus-toggle').addEventListener('click', async () => {
+    const resp = await msg({ action: 'toggleFocus' });
+    if (resp?.ok) {
+      state = { ...state, ...resp.state };
+      render();
+    }
+  });
+
+  // Remove focus tab
+  document.getElementById('focus-tabs-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.tab-remove');
+    if (!btn) return;
+    const tabId = Number(btn.dataset.tabid);
+    await msg({ action: 'removeFocusTab', tabId });
+    state.focusTabs = state.focusTabs.filter(ft => ft.tabId !== tabId);
+    renderFocusTabs();
+  });
+
+  // Collapsible: whitelist
+  bindCollapsible('wl-toggle', 'wl-body');
+  // Collapsible: settings
+  bindCollapsible('settings-toggle', 'settings-body');
+  // Collapsible: log — open also shows clear button in header
+  bindCollapsible('log-toggle', 'log-body', () => renderLog());
+
+  // Whitelist add
+  document.getElementById('wl-add-btn').addEventListener('click', addDomain);
+  document.getElementById('wl-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addDomain();
+  });
+
+  // Whitelist remove
+  document.getElementById('wl-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.wl-remove');
+    if (!btn) return;
+    const domain = btn.dataset.domain;
+    await msg({ action: 'removeDomain', domain });
+    state.whitelist = state.whitelist.filter(d => d !== domain);
+    renderWhitelist();
+  });
+
+  // Countdown
+  document.getElementById('countdown-seg').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-secs]');
+    if (!btn) return;
+    const secs = Number(btn.dataset.secs);
+    await msg({ action: 'setCountdown', secs });
+    state.countdownSecs = secs;
+    renderCountdown();
+  });
+
+  // Log clear
+  document.getElementById('log-clear-btn').addEventListener('click', async (e) => {
+    e.stopPropagation(); // don't collapse the section
+    await msg({ action: 'clearLog' });
+    state.log = [];
+    renderLog();
+  });
+}
+
+async function addDomain() {
+  const input = document.getElementById('wl-input');
+  let domain = input.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  if (!domain) return;
+  await msg({ action: 'addDomain', domain });
+  if (!state.whitelist.includes(domain)) state.whitelist.push(domain);
+  input.value = '';
+  renderWhitelist();
+}
+
+function bindCollapsible(toggleId, bodyId, onOpen) {
+  const toggle = document.getElementById(toggleId);
+  const body = document.getElementById(bodyId);
+  const icon = toggle.querySelector('.col-icon');
+
+  toggle.addEventListener('click', (e) => {
+    // Don't collapse if clicking the clear button inside
+    if (e.target.closest('.log-clear-btn')) return;
+
+    const open = !body.hidden;
+    body.hidden = open;
+    icon.textContent = open ? '+' : '−';
+    toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+
+    // Show/hide clear wrap when log section is open
+    if (bodyId === 'log-body') {
+      const clearWrap = document.getElementById('log-clear-wrap');
+      if (!open && (state.log || []).length > 0) {
+        clearWrap.style.display = 'block';
+      } else {
+        clearWrap.style.display = 'none';
+      }
+    }
+
+    if (!open && onOpen) onOpen();
+  });
+}
+
+// ── Utils ─────────────────────────────────────────────────────────
+
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

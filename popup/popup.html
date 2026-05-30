@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DONT GET DISTRACTED BIRD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../shared/design-system.css">
+<style>
+  html,body{margin:0;padding:0;width:360px;background:#f4f1ea;overflow-x:hidden;}
+
+  /* ── Focus tabs section (always visible) ── */
+  #focus-tabs-section{border-bottom:1px solid var(--bone-3);}
+  #focus-tabs-section .p-label{margin:13px 15px 0;padding-bottom:0;}
+  #focus-tabs-list{padding:0 15px;}
+  .tab-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--bone-3);}
+  .tab-row:last-child{border-bottom:none;}
+  .tab-tick{width:4px;height:20px;background:var(--red);flex-shrink:0;border-radius:1px;}
+  .tab-info{min-width:0;flex:1;}
+  .tab-title{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);}
+  .tab-url{font-family:var(--mono);font-size:10.5px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tab-remove{color:var(--mute-2);font-size:14px;background:none;border:none;cursor:pointer;padding:4px 6px;line-height:1;border-radius:var(--r-1);flex-shrink:0;}
+  .tab-remove:hover{color:var(--red);}
+  .no-tabs{font-family:var(--mono);font-size:11px;color:#c5bfb6;padding:8px 0 10px;}
+
+  /* ── Whitelist section ── */
+  .wl-add-row{display:flex;gap:6px;margin-bottom:8px;margin-top:2px;}
+  .wl-add-row input{flex:1;border:1px solid var(--bone-3);background:#fff;padding:7px 9px;
+    font-family:var(--mono);font-size:11px;border-radius:3px;color:var(--ink);outline:none;}
+  .wl-add-row input:focus{border-color:var(--red);outline:2px solid var(--red);outline-offset:-1px;}
+  .wl-add-row button{background:var(--ink);color:var(--bone);border:none;padding:0 12px;
+    font-family:var(--exp);font-weight:700;font-size:11px;border-radius:3px;cursor:pointer;min-height:36px;}
+  .wl-add-row button:hover{background:var(--ink-2);}
+  .wl-domain{display:flex;padding:5px 0;border-bottom:1px solid var(--bone-3);font-family:var(--mono);font-size:11px;align-items:center;}
+  .wl-domain:last-child{border-bottom:none;}
+  .wl-domain .name{flex:1;color:var(--ink);}
+  .wl-remove{color:var(--mute-2);background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;}
+  .wl-remove:hover{color:var(--red);}
+  .wl-empty{font-family:var(--mono);font-size:11px;color:#c5bfb6;padding:4px 0 2px;}
+
+  /* ── Settings ── */
+  .settings-row{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink);}
+  .settings-row .seg{margin-left:auto;}
+
+  /* ── Session log ── */
+  .log-list{font-family:var(--mono);font-size:10.5px;line-height:1.8;margin-top:2px;color:var(--ink);}
+  .log-entry .time{color:var(--red);}
+  .log-empty{font-family:var(--mono);font-size:11px;color:#c5bfb6;}
+  .log-clear-btn{font-family:var(--mono);font-size:10px;color:var(--mute-2);background:none;border:none;cursor:pointer;padding:0;}
+  .log-clear-btn:hover{color:var(--red);}
+</style>
+</head>
+<body class="dgdb">
+
+<!-- ── Header ── -->
+<div class="popup-head" id="popup-head">
+  <img src="../assets/logo-bird.svg" width="20" height="20" alt="">
+  <div class="name">DONT GET DISTRACTED BIRD</div>
+  <div style="margin-left:auto;">
+    <button class="toggle dark toggle-lg" id="focus-toggle" data-on="false" aria-label="Toggle Focus Mode" aria-pressed="false">
+      <span data-seg="on">ON</span>
+      <span data-seg="off">OFF</span>
+    </button>
+  </div>
+</div>
+
+<!-- ── Focus Tabs (always visible) ── -->
+<div id="focus-tabs-section">
+  <span class="p-label" id="focus-tabs-label">Focus tabs</span>
+  <div id="focus-tabs-list"></div>
+</div>
+
+<!-- ── Whitelist (collapsible) ── -->
+<div id="wl-section">
+  <button class="collapsible-hd" id="wl-toggle" aria-expanded="false">
+    <span class="col-label">Whitelist</span>
+    <span class="col-icon" aria-hidden="true">+</span>
+  </button>
+  <div class="collapsible-body" id="wl-body" hidden>
+    <div class="wl-add-row">
+      <input type="text" id="wl-input" placeholder="add domain…" autocomplete="off" spellcheck="false">
+      <button id="wl-add-btn">ADD</button>
+    </div>
+    <div id="wl-list"></div>
+  </div>
+</div>
+
+<!-- ── Settings (collapsible) ── -->
+<div id="settings-section">
+  <button class="collapsible-hd" id="settings-toggle" aria-expanded="false">
+    <span class="col-label">Settings</span>
+    <span class="col-icon" aria-hidden="true">+</span>
+  </button>
+  <div class="collapsible-body" id="settings-body" hidden>
+    <div class="settings-row">
+      Countdown
+      <div class="seg" id="countdown-seg" role="group" aria-label="Countdown duration">
+        <button data-secs="3" aria-pressed="false">3s</button>
+        <button data-secs="5" aria-pressed="false">5s</button>
+        <button data-secs="10" aria-pressed="false">10s</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Session Log (collapsible) ── -->
+<div id="log-section">
+  <button class="collapsible-hd" id="log-toggle" aria-expanded="false">
+    <span class="col-label">Session log</span>
+    <div id="log-clear-wrap" style="margin-right:10px;display:none;">
+      <button class="log-clear-btn" id="log-clear-btn">clear</button>
+    </div>
+    <span class="col-icon" aria-hidden="true">+</span>
+  </button>
+  <div class="collapsible-body" id="log-body" hidden>
+    <div id="log-list"></div>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

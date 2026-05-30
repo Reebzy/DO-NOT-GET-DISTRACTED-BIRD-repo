@@ -1,0 +1,14 @@
+{
+  "name": "dont-get-distracted-bird",
+  "version": "1.0.0",
+  "description": "Chrome extension — focus enforcement with a stern heraldic cardinal",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "icons": "node build.js"
+  },
+  "devDependencies": {
+    "archiver": "^7.0.1",
+    "sharp": "^0.33.5"
+  }
+}

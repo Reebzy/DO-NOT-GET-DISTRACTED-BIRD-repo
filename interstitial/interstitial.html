@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DONT GET DISTRACTED BIRD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../shared/design-system.css">
+<style>
+  html,body{margin:0;padding:0;background:#100d0b;min-height:100vh;}
+
+  /* Ring container */
+  .ring-svg text{font-family:"Archivo Expanded",Archivo,sans-serif;font-weight:800;fill:#c41a1a;}
+
+  /* Responsive headline */
+  @media(max-width:900px){
+    .inter h1{font-size:52px !important;}
+    .inter .wrap{padding:0 40px !important;}
+    .inter .bird-watermark{right:-200px !important;}
+  }
+  @media(max-width:600px){
+    .inter h1{font-size:36px !important;}
+    .inter .wrap{padding:0 24px !important;}
+    .inter .bird-watermark{display:none !important;}
+    .inter .actions{flex-direction:column !important;align-items:flex-start !important;}
+  }
+</style>
+</head>
+<body class="dgdb">
+
+<div class="inter" id="inter-root">
+  <!-- Bird watermark (right edge) -->
+  <div class="bird-watermark" id="bird-wrap" aria-hidden="true"></div>
+
+  <div class="wrap">
+    <!-- Kicker -->
+    <div class="kicker">
+      <span class="diamond"></span>
+      <span>DONT GET DISTRACTED BIRD</span>
+    </div>
+
+    <!-- Headline (populated by JS) -->
+    <h1 id="headline"></h1>
+
+    <!-- Destination line (domain variant only) -->
+    <div class="dest-line" id="dest-line" hidden></div>
+
+    <!-- Sub-text (tab variant) -->
+    <div class="sub" id="sub-text" hidden>Taking you back to your work in…</div>
+
+    <!-- Actions: ring + buttons -->
+    <div class="actions">
+      <!-- Countdown ring -->
+      <div class="ring-wrap" id="ring-wrap" aria-live="polite" aria-atomic="true"></div>
+
+      <!-- Buttons -->
+      <div class="btns">
+        <button class="btn-go-back" id="btn-go-back">← GO BACK</button>
+        <button class="btn-add" id="btn-add">Add this tab to focus</button>
+        <button class="btn-distracted" id="btn-distracted">I AM DISTRACTED. END FOCUS MODE.</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="interstitial.js"></script>
+</body>
+</html>
