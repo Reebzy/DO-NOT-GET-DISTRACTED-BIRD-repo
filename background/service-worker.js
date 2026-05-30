@@ -149,6 +149,9 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (!session.focusMode) return;
 
   if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    // Skip if we already recorded a focus loss (onFocusChanged can fire multiple times)
+    if (session.focusLossTime) return;
+
     // Focus lost
     const lossTime = Date.now();
     await setSession({ focusLossTime: lossTime });
@@ -160,13 +163,13 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 
     // OS notification (FM-02-04)
     const notifId = 'dgdb-focus-loss-' + Date.now();
-    chrome.notifications.create(notifId, {
+    await chrome.notifications.create(notifId, {
       type: 'basic',
       iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
       title: 'DONT GET DISTRACTED BIRD',
       message: 'Your focus window lost focus. Come back.',
-      priority: 2,
-    });
+      requireInteraction: false,
+    }).catch(err => console.warn('[DGDB] notification error:', err));
     await setSession({ notifId });
     await addLog('left window');
 
