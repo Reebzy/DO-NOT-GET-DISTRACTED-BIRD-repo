@@ -25,19 +25,28 @@ function createWidget() {
     background: #f4f1ea;
     border: 1px solid #e2dccf;
     border-radius: 3px;
-    padding: 10px 12px;
+    padding: 8px 12px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     box-shadow: 0 2px 2px rgba(16,13,11,.20);
     font-family: Archivo, system-ui, sans-serif;
-    min-width: 260px;
+    cursor: move;
   `;
 
-  // Logo
+  // Logo with black background
   const logo = document.createElement('div');
   logo.innerHTML = getBirdSVG();
-  logo.style.cssText = 'display: flex; align-items: center; flex-shrink: 0;';
+  logo.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    background: #100d0b;
+    border-radius: 3px;
+  `;
 
   // Timer
   const timer = document.createElement('div');
@@ -149,6 +158,7 @@ function injectWidget() {
 
   widgetElement = createWidget();
   document.body.appendChild(widgetElement);
+  makeDraggable(widgetElement);
 
   // Start timer updates
   if (timerInterval) clearInterval(timerInterval);
@@ -224,45 +234,48 @@ function createStartButton() {
     gap: 8px;
     box-shadow: 0 2px 2px rgba(16,13,11,.20);
     font-family: Archivo, system-ui, sans-serif;
+    cursor: move;
   `;
 
   const logo = document.createElement('div');
   logo.innerHTML = getBirdSVG();
-  logo.style.cssText = 'display: flex; align-items: center; flex-shrink: 0;';
-
-  const startBtn = document.createElement('button');
-  startBtn.style.cssText = `
-    background: transparent;
-    border: 1px solid #d4cdbd;
-    border-radius: 2px;
-    padding: 6px 8px;
-    cursor: pointer;
-    font-size: 13px;
-    color: #100d0b;
+  logo.style.cssText = `
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
     width: 32px;
     height: 32px;
-    transition: background 110ms cubic-bezier(.2,.7,.3,1), color 110ms cubic-bezier(.2,.7,.3,1), border-color 110ms cubic-bezier(.2,.7,.3,1);
+    background: #100d0b;
+    border-radius: 3px;
+  `;
+
+  const startBtn = document.createElement('div');
+  startBtn.style.cssText = `
+    font-size: 16px;
+    color: #100d0b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
+    transition: color 110ms cubic-bezier(.2,.7,.3,1);
   `;
   startBtn.setAttribute('title', 'Start focus mode');
   startBtn.textContent = '▶';
 
   startBtn.addEventListener('mouseenter', () => {
-    startBtn.style.background = '#c41a1a';
-    startBtn.style.color = '#fff';
-    startBtn.style.borderColor = '#c41a1a';
+    startBtn.style.color = '#c41a1a';
   });
 
   startBtn.addEventListener('mouseleave', () => {
-    startBtn.style.background = 'transparent';
     startBtn.style.color = '#100d0b';
-    startBtn.style.borderColor = '#d4cdbd';
   });
 
-  startBtn.addEventListener('click', () => {
+  startBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     chrome.runtime.sendMessage({ action: 'toggleFocus' }).catch(() => {});
   });
 
@@ -275,6 +288,7 @@ function injectStartButton() {
   if (startButtonElement) return;
   startButtonElement = createStartButton();
   document.body.appendChild(startButtonElement);
+  makeDraggable(startButtonElement);
 }
 
 function removeStartButton() {
@@ -282,6 +296,42 @@ function removeStartButton() {
     startButtonElement.remove();
     startButtonElement = null;
   }
+}
+
+// ── Drag functionality ──────────────────────────────────────────
+
+function makeDraggable(element) {
+  let offsetX = 0;
+  let offsetY = 0;
+  let isDown = false;
+
+  element.addEventListener('mousedown', (e) => {
+    isDown = true;
+    offsetX = e.clientX - element.getBoundingClientRect().left;
+    offsetY = e.clientY - element.getBoundingClientRect().top;
+    element.style.cursor = 'grabbing';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDown) return;
+    const x = e.clientX - offsetX;
+    const y = e.clientY - offsetY;
+    element.style.left = x + 'px';
+    element.style.right = 'auto';
+    element.style.top = y + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    isDown = false;
+    element.style.cursor = 'move';
+  });
+
+  element.addEventListener('mouseleave', () => {
+    if (isDown) {
+      isDown = false;
+      element.style.cursor = 'move';
+    }
+  });
 }
 
 // Listen for focus state changes
