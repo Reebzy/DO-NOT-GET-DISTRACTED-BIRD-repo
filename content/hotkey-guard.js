@@ -63,8 +63,11 @@
     if (document.getElementById('dgdb-modal-scrim')) return;
 
     chrome.runtime.sendMessage({ action: 'isLastFocusTab' }, (resp) => {
-      if (!resp?.isLast) return; // Not the last focus tab — allow close (but we already prevented it above)
-      // Render modal
+      if (!resp?.isLast) {
+        // Not the last focus tab — close this tab via the service worker (we already prevented the default)
+        chrome.runtime.sendMessage({ action: 'closeCurrentTab' });
+        return;
+      }
       renderLastTabModal();
     });
   }

@@ -162,7 +162,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     const notifId = 'dgdb-focus-loss-' + Date.now();
     chrome.notifications.create(notifId, {
       type: 'basic',
-      iconUrl: 'assets/icon-48.png',
+      iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
       title: 'DONT GET DISTRACTED BIRD',
       message: 'Your focus window lost focus. Come back.',
       priority: 2,
@@ -185,7 +185,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 
     // Inject return overlay into the active focus tab
     const lastTabId = session.lastFocusTabId;
-    if (lastTabId && awaySecs > 0) {
+    if (lastTabId) {
       chrome.scripting.executeScript({
         target: { tabId: lastTabId },
         func: showReturnOverlay,
@@ -224,7 +224,7 @@ function showReturnOverlay(awaySecs) {
   el.innerHTML = birdSVG + `
     <div>
       <div style="font-family:'Archivo Expanded',Archivo,sans-serif;font-weight:800;font-size:13px;letter-spacing:.02em;">You're back.</div>
-      <div style="font-family:'JetBrains Mono',monospace;color:#c41a1a;font-size:11px;margin-top:2px;">Away for ${awaySecs}s</div>
+      <div style="font-family:'JetBrains Mono',monospace;color:#c41a1a;font-size:11px;margin-top:2px;">Away for ${awaySecs > 0 ? awaySecs + 's' : '<1s'}</div>
     </div>`;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3000);
@@ -475,9 +475,18 @@ async function handleMessage(msg, sender) {
 
     case 'isLastFocusTab': {
       const session = await getSession();
-      const isLast = session.focusTabs.length === 1 &&
-        session.focusTabs[0].tabId === (msg.tabId ?? sender.tab?.id);
+      const tabId = msg.tabId ?? sender.tab?.id;
+      const isLast =
+        (session.focusTabs.length === 1 && session.focusTabs[0].tabId === tabId) ||
+        (session.pendingFirstNav && session.lastFocusTabId === tabId);
       return { ok: true, isLast };
+    }
+
+    case 'closeCurrentTab': {
+      if (sender.tab?.id) {
+        chrome.tabs.remove(sender.tab.id).catch(() => {});
+      }
+      return { ok: true };
     }
 
     default:
