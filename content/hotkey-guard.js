@@ -125,30 +125,15 @@
     // Not dismissible by clicking outside — only via buttons (NFR-D-09)
   }
 
-  // ── Keepalive port ───────────────────────────────────────────────
-  // A connected Port keeps the MV3 service worker alive. Without this the worker
-  // suspends after ~30s and fails to wake reliably for chrome.windows.onFocusChanged
-  // (which fires exactly when Chrome loses focus), so the focus-loss notification
-  // either never appears or surfaces stale. Chrome force-closes ports after ~5min,
-  // so we reconnect every 4min.
-  let _keepalivePort = null;
-  function connectKeepalive() {
-    try {
-      _keepalivePort = chrome.runtime.connect({ name: 'dgdb-keepalive' });
-      _keepalivePort.onDisconnect.addListener(() => { _keepalivePort = null; });
-    } catch (e) { /* extension reloading */ }
-  }
-  connectKeepalive();
-  const _keepalive = setInterval(connectKeepalive, 240000);
-
   // ── Message listener ────────────────────────────────────────────
+  // Service-worker liveness is handled by chrome.alarms in the background; no
+  // content-script keepalive is needed here (a port-based one broke when pages
+  // entered the bfcache, spamming runtime.lastError).
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'startTitleFlash') startTitleFlash();
     if (msg.action === 'stopTitleFlash') stopTitleFlash();
     if (msg.action === 'focusOff') {
       stopTitleFlash();
-      clearInterval(_keepalive);
-      if (_keepalivePort) { try { _keepalivePort.disconnect(); } catch (e) {} }
       window.__dgdbGuardActive = false;
     }
   });

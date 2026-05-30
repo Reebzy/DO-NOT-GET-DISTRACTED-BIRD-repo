@@ -207,10 +207,12 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     await addLog('left window');
 
   } else {
-    // Focus returned (FM-03) — clear all focus notifications, even if we never
-    // recorded the matching loss (self-heals a missed WINDOW_ID_NONE event).
+    // Focus returned (FM-03).
+    // NOTE: intentionally NOT clearing the notification here while we confirm
+    // Windows is actually receiving it — returning to Chrome was wiping it before
+    // it could be inspected. Stale notifications are still prevented because the
+    // focus-loss path clears old ones before creating a new one.
     const { focusLossTime } = session;
-    await clearFocusNotifications();
     const awayMs = focusLossTime ? Date.now() - focusLossTime : 0;
     const awaySecs = Math.round(awayMs / 1000);
 
@@ -406,13 +408,6 @@ chrome.alarms.onAlarm.addListener(() => {
 chrome.runtime.onStartup.addListener(async () => {
   const { focusMode } = await getSession();
   if (focusMode) startKeepAlive();
-});
-
-// The content script also holds a backup port open while Focus Mode is on.
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name === 'dgdb-keepalive') {
-    port.onDisconnect.addListener(() => { /* reconnected by content script */ });
-  }
 });
 
 // ── Message handler ───────────────────────────────────────────────
