@@ -125,7 +125,7 @@
         type: 'tab',
         title: tabTitle,
         returnUrl,
-        destUrl: location.href,
+        destUrl: returnUrl,
       }, () => {
         // The service worker navigates us — but also go directly
         if (returnUrl) location.href = returnUrl;
