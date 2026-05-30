@@ -43,7 +43,34 @@
         transform="rotate(-90 ${RING_SIZE/2} ${RING_SIZE/2})"/>
       <text x="50%" y="52%" text-anchor="middle" dominant-baseline="middle"
         font-family="'Archivo Expanded', Archivo, sans-serif" font-weight="800"
-        font-size="${RING_SIZE * 0.42}" fill="#c41a1a">${n}</text>
+        font-size="${RING_SIZE * 0.42}" fill="#c41a1a" class="ring-text">${n}</text>
+    </svg>`;
+  }
+
+  function makeRingAnimated() {
+    const startOffset = 0;
+    const endOffset = RING_C;
+    const animationDuration = countdown;
+
+    return `<svg width="${RING_SIZE}" height="${RING_SIZE}" viewBox="0 0 ${RING_SIZE} ${RING_SIZE}" class="ring-svg ring-animated" aria-hidden="true">
+      <defs>
+        <style>
+          @keyframes ringCountdown {
+            from { stroke-dashoffset: 0; }
+            to { stroke-dashoffset: ${endOffset}; }
+          }
+          .ring-progress {
+            animation: ringCountdown ${animationDuration}s linear forwards;
+          }
+        </style>
+      </defs>
+      <circle cx="${RING_SIZE/2}" cy="${RING_SIZE/2}" r="${RING_R}" fill="none" stroke="#2a2420" stroke-width="6"/>
+      <circle cx="${RING_SIZE/2}" cy="${RING_SIZE/2}" r="${RING_R}" fill="none" stroke="#c41a1a" stroke-width="6"
+        stroke-linecap="butt" stroke-dasharray="${RING_C}" stroke-dashoffset="0"
+        transform="rotate(-90 ${RING_SIZE/2} ${RING_SIZE/2})" class="ring-progress"/>
+      <text x="50%" y="52%" text-anchor="middle" dominant-baseline="middle"
+        font-family="'Archivo Expanded', Archivo, sans-serif" font-weight="800"
+        font-size="${RING_SIZE * 0.42}" fill="#c41a1a" class="ring-text">${remaining}</text>
     </svg>`;
   }
 
@@ -76,20 +103,27 @@
       type === 'tab' ? 'Add this tab to focus' : 'Add this domain to focus';
 
     // Initial ring
-    updateRing();
+    initRing();
   }
 
-  function updateRing() {
-    const pct = remaining / countdown;
-    document.getElementById('ring-wrap').innerHTML = makeRing(remaining, pct);
-    document.getElementById('ring-wrap').setAttribute('aria-label', `${remaining} seconds remaining`);
+  function initRing() {
+    document.getElementById('ring-wrap').innerHTML = makeRingAnimated();
+    document.getElementById('ring-wrap').setAttribute('aria-label', `${countdown} seconds remaining`);
+  }
+
+  function updateRingText() {
+    const ringText = document.querySelector('.ring-text');
+    if (ringText) {
+      ringText.textContent = remaining;
+      document.getElementById('ring-wrap').setAttribute('aria-label', `${remaining} seconds remaining`);
+    }
   }
 
   // ── Countdown ───────────────────────────────────────────────────
   function startCountdown() {
     timer = setInterval(() => {
       remaining--;
-      updateRing();
+      updateRingText();
       if (remaining <= 0) {
         clearInterval(timer);
         goBack();
