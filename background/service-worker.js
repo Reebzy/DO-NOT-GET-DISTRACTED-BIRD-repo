@@ -98,6 +98,9 @@ async function enableFocusMode() {
   await setBadge(true);
   await addLog('session started', focusTabs[0]?.url || 'pending first navigation');
 
+  // Keep the service worker awake so chrome.windows.onFocusChanged fires promptly
+  startKeepAlive();
+
   // Inject content scripts into all existing tabs
   await injectContentScripts();
 }
@@ -105,6 +108,7 @@ async function enableFocusMode() {
 async function disableFocusMode() {
   const { notifId } = await getSession();
   if (notifId) chrome.notifications.clear(notifId);
+  chrome.notifications.clear(FOCUS_LOSS_NOTIF_ID);
 
   await setSession({
     focusMode: false,
@@ -115,6 +119,7 @@ async function disableFocusMode() {
     notifId: null,
   });
 
+  stopKeepAlive();
   await setBadge(false);
   await addLog('session ended');
 
@@ -172,6 +177,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     }
 
     // OS notification
+    console.log('[DGDB] left Chrome at', new Date().toLocaleTimeString(), '— firing notification');
     await chrome.notifications.create(FOCUS_LOSS_NOTIF_ID, {
       type: 'basic',
       iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
@@ -357,9 +363,34 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 // ── Keepalive ─────────────────────────────────────────────────────
-// Content scripts hold open a 'dgdb-keepalive' port while Focus Mode is on.
-// An open port keeps the service worker alive so it is awake when
-// chrome.windows.onFocusChanged fires (otherwise the notification is missed).
+// MV3 service workers suspend after ~30s idle, and chrome.windows.onFocusChanged
+// (which fires exactly as Chrome loses focus) does not reliably wake a suspended
+// worker — so the focus-loss notification gets missed. A repeating alarm keeps
+// the worker awake while Focus Mode is on: Chrome wakes the worker to deliver each
+// alarm, which resets the idle timer. This lives entirely in the worker and does
+// not depend on content-script injection.
+const KEEPALIVE_ALARM = 'dgdb-keepalive';
+
+function startKeepAlive() {
+  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 });
+}
+
+function stopKeepAlive() {
+  chrome.alarms.clear(KEEPALIVE_ALARM);
+}
+
+chrome.alarms.onAlarm.addListener(() => {
+  // No-op: receiving the alarm is what keeps the worker alive.
+});
+
+// Re-arm the alarm on startup if Focus Mode was already on (worker may have been
+// killed and restarted while a session is active).
+chrome.runtime.onStartup.addListener(async () => {
+  const { focusMode } = await getSession();
+  if (focusMode) startKeepAlive();
+});
+
+// The content script also holds a backup port open while Focus Mode is on.
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'dgdb-keepalive') {
     port.onDisconnect.addListener(() => { /* reconnected by content script */ });
