@@ -176,7 +176,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
       iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
       title: 'DONT GET DISTRACTED BIRD',
       message: 'Your focus window lost focus. Come back.',
-      requireInteraction: false,
+      requireInteraction: true,
     }).catch(err => { console.warn('[DGDB] notification error:', err); return null; });
     console.log('[DGDB] notification result:', createdId);
     await setSession({ notifId });
