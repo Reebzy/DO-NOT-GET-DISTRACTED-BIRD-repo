@@ -8,7 +8,7 @@ let state = {
   whitelist: [],
   countdownSecs: 5,
   customHotkey: 'Ctrl+Shift+F',
-  pauseHotkey: 'Ctrl+Shift+P',
+  pauseHotkey: 'Ctrl+Shift+Space',
   log: [],
 };
 
@@ -121,7 +121,7 @@ function renderHotkey() {
     display.textContent = hotkey;
   }
 
-  const pauseHotkey = state.pauseHotkey || 'Ctrl+Shift+P';
+  const pauseHotkey = state.pauseHotkey || 'Ctrl+Shift+Space';
   const pauseDisplay = document.getElementById('pause-hotkey-display');
   if (pauseDisplay) {
     pauseDisplay.textContent = pauseHotkey;
@@ -227,8 +227,8 @@ function bindEvents() {
 
   // Pause hotkey reset
   document.getElementById('pause-hotkey-reset-btn').addEventListener('click', async () => {
-    await msg({ action: 'setPauseHotkey', hotkey: 'Ctrl+Shift+P' });
-    state.pauseHotkey = 'Ctrl+Shift+P';
+    await msg({ action: 'setPauseHotkey', hotkey: 'Ctrl+Shift+Space' });
+    state.pauseHotkey = 'Ctrl+Shift+Space';
     renderHotkey();
     showHotkeyStatus('Reset to default', false);
   });

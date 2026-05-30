@@ -25,27 +25,34 @@ function createWidget() {
     background: #f4f1ea;
     border: 1px solid #e2dccf;
     border-radius: 3px;
-    padding: 8px 12px;
     display: flex;
-    align-items: center;
-    gap: 8px;
+    align-items: stretch;
     box-shadow: 0 2px 2px rgba(16,13,11,.20);
     font-family: Archivo, system-ui, sans-serif;
     cursor: move;
+    overflow: hidden;
   `;
 
-  // Logo with black background
-  const logo = document.createElement('div');
-  logo.innerHTML = getBirdSVG();
-  logo.style.cssText = `
+  // Logo panel (left side, fills height)
+  const logoPanel = document.createElement('div');
+  logoPanel.style.cssText = `
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    width: 32px;
-    height: 32px;
+    width: 40px;
     background: #100d0b;
-    border-radius: 3px;
+    padding: 0;
+  `;
+  logoPanel.innerHTML = getBirdSVG();
+
+  // Content panel (right side)
+  const content = document.createElement('div');
+  content.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
   `;
 
   // Timer
@@ -60,95 +67,78 @@ function createWidget() {
   `;
   timer.textContent = '00:00';
 
-  // Spacer
-  const spacer = document.createElement('div');
-  spacer.style.cssText = 'flex: 1;';
-
-  // Pause button
-  const pauseBtn = document.createElement('button');
+  // Pause button (no border)
+  const pauseBtn = document.createElement('div');
   pauseBtn.id = 'dgdb-widget-pause';
   pauseBtn.setAttribute('title', 'Pause focus mode');
   pauseBtn.style.cssText = `
-    background: transparent;
-    border: 1px solid #d4cdbd;
-    border-radius: 2px;
-    padding: 6px 8px;
-    cursor: pointer;
-    font-size: 13px;
+    font-size: 16px;
     color: #100d0b;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    transition: background 110ms cubic-bezier(.2,.7,.3,1), color 110ms cubic-bezier(.2,.7,.3,1), border-color 110ms cubic-bezier(.2,.7,.3,1);
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
+    transition: color 110ms cubic-bezier(.2,.7,.3,1);
   `;
   pauseBtn.textContent = '⏸';
 
   pauseBtn.addEventListener('mouseenter', () => {
-    pauseBtn.style.background = '#c41a1a';
-    pauseBtn.style.color = '#fff';
-    pauseBtn.style.borderColor = '#c41a1a';
+    pauseBtn.style.color = '#c41a1a';
   });
 
   pauseBtn.addEventListener('mouseleave', () => {
-    pauseBtn.style.background = 'transparent';
     pauseBtn.style.color = '#100d0b';
-    pauseBtn.style.borderColor = '#d4cdbd';
   });
 
-  pauseBtn.addEventListener('click', async () => {
-    const resp = await chrome.runtime.sendMessage({ action: 'togglePauseFocusMode' });
-    if (resp?.ok) {
-      updatePauseButton(resp.paused);
-    }
+  pauseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    chrome.runtime.sendMessage({ action: 'togglePauseFocusMode' }).then(resp => {
+      if (resp?.ok) {
+        updatePauseButton(resp.paused);
+      }
+    }).catch(() => {});
   });
 
-  // End button
-  const endBtn = document.createElement('button');
+  // End button (no border)
+  const endBtn = document.createElement('div');
   endBtn.id = 'dgdb-widget-end';
   endBtn.setAttribute('title', 'End focus mode');
   endBtn.style.cssText = `
-    background: transparent;
-    border: 1px solid #d4cdbd;
-    border-radius: 2px;
-    padding: 6px 8px;
-    cursor: pointer;
-    font-size: 13px;
+    font-size: 16px;
     color: #100d0b;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    transition: background 110ms cubic-bezier(.2,.7,.3,1), color 110ms cubic-bezier(.2,.7,.3,1), border-color 110ms cubic-bezier(.2,.7,.3,1);
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
+    transition: color 110ms cubic-bezier(.2,.7,.3,1);
   `;
   endBtn.textContent = '×';
 
   endBtn.addEventListener('mouseenter', () => {
-    endBtn.style.background = '#c41a1a';
-    endBtn.style.color = '#fff';
-    endBtn.style.borderColor = '#c41a1a';
+    endBtn.style.color = '#c41a1a';
   });
 
   endBtn.addEventListener('mouseleave', () => {
-    endBtn.style.background = 'transparent';
     endBtn.style.color = '#100d0b';
-    endBtn.style.borderColor = '#d4cdbd';
   });
 
-  endBtn.addEventListener('click', () => {
+  endBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     chrome.runtime.sendMessage({ action: 'endFocusMode' }).catch(() => {});
   });
 
   // Assemble widget
-  container.appendChild(logo);
-  container.appendChild(timer);
-  container.appendChild(spacer);
-  container.appendChild(pauseBtn);
-  container.appendChild(endBtn);
+  content.appendChild(timer);
+  content.appendChild(pauseBtn);
+  content.appendChild(endBtn);
+  container.appendChild(logoPanel);
+  container.appendChild(content);
 
   return container;
 }
@@ -205,11 +195,11 @@ function updatePauseButton(paused) {
   if (paused) {
     pauseBtn.textContent = '▶';
     pauseBtn.setAttribute('title', 'Resume focus mode');
-    container.style.opacity = '0.6';
+    pauseBtn.style.opacity = '0.6';
   } else {
     pauseBtn.textContent = '⏸';
     pauseBtn.setAttribute('title', 'Pause focus mode');
-    container.style.opacity = '1';
+    pauseBtn.style.opacity = '1';
   }
 }
 

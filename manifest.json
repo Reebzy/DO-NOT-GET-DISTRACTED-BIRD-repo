@@ -43,7 +43,7 @@
       "description": "Start/end focus mode"
     },
     "toggle-pause-hotkey": {
-      "suggested_key": { "default": "Ctrl+Shift+P" },
+      "suggested_key": { "default": "Ctrl+Shift+Space" },
       "description": "Pause/resume focus mode"
     }
   },

@@ -19,7 +19,7 @@ const DEFAULT_LOCAL = {
   whitelist: [],      // [string] domains e.g. "linear.app"
   countdownSecs: 5,
   customHotkey: 'Ctrl+Shift+F',
-  pauseHotkey: 'Ctrl+Shift+P',
+  pauseHotkey: 'Ctrl+Shift+Space',
   log: [],            // [{time, event, detail}] max 200
 };
 
@@ -664,7 +664,7 @@ async function handleMessage(msg, sender) {
 
     case 'getPauseHotkey': {
       const { pauseHotkey } = await getLocal();
-      return { ok: true, hotkey: pauseHotkey || 'Ctrl+Shift+P' };
+      return { ok: true, hotkey: pauseHotkey || 'Ctrl+Shift+Space' };
     }
 
     case 'setPauseHotkey': {
