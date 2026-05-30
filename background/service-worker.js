@@ -11,11 +11,15 @@ const DEFAULT_SESSION = {
   focusLossTime: null,
   notifId: null,
   newWindowIds: [], // [windowId] windows created while focus mode was on
+  focusStartTime: null,
+  focusPaused: false,
 };
 
 const DEFAULT_LOCAL = {
   whitelist: [],      // [string] domains e.g. "linear.app"
   countdownSecs: 5,
+  customHotkey: 'Ctrl+Shift+F',
+  pauseHotkey: 'Ctrl+Shift+Space',
   log: [],            // [{time, event, detail}] max 200
 };
 
@@ -94,6 +98,8 @@ async function enableFocusMode() {
     pendingFirstNav,
     focusLossTime: null,
     notifId: null,
+    focusStartTime: Date.now(),
+    focusPaused: false,
   });
 
   await setBadge(true);
@@ -101,6 +107,9 @@ async function enableFocusMode() {
 
   // Inject content scripts into all existing tabs
   await injectContentScripts();
+
+  // Broadcast focus mode state to all tabs
+  broadcastToAllTabs({ action: 'focusOn' });
 }
 
 async function disableFocusMode() {
@@ -115,6 +124,8 @@ async function disableFocusMode() {
     focusLossTime: null,
     notifId: null,
     newWindowIds: [],
+    focusStartTime: null,
+    focusPaused: false,
   });
 
   await setBadge(false);
@@ -130,7 +141,7 @@ async function injectContentScripts() {
     if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) continue;
     chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ['content/hotkey-guard.js'],
+      files: ['content/focus-widget.js', 'content/hotkey-guard.js'],
     }).catch(() => {});
   }
 }
@@ -438,7 +449,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
   await addLog('tab blocked', 'new tab');
 });
 
-// Also inject hotkey guard when tabs finish loading
+// Also inject content scripts when tabs finish loading
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
   if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) return;
@@ -448,8 +459,18 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
   chrome.scripting.executeScript({
     target: { tabId },
-    files: ['content/hotkey-guard.js'],
+    files: ['content/focus-widget.js', 'content/hotkey-guard.js'],
   }).catch(() => {});
+});
+
+// ── Hotkey command handler ───────────────────────────────────────
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command === 'toggle-focus-hotkey') {
+    await handleMessage({ action: 'toggleFocus' }, {});
+  } else if (command === 'toggle-pause-hotkey') {
+    await handleMessage({ action: 'togglePauseFocusMode' }, {});
+  }
 });
 
 // ── Message handler ───────────────────────────────────────────────
@@ -611,6 +632,43 @@ async function handleMessage(msg, sender) {
       if (sender.tab?.id) {
         chrome.tabs.remove(sender.tab.id).catch(() => {});
       }
+      return { ok: true };
+    }
+
+    case 'getElapsedTime': {
+      const session = await getSession();
+      const elapsed = session.focusMode && session.focusStartTime && !session.focusPaused
+        ? Math.floor((Date.now() - session.focusStartTime) / 1000)
+        : 0;
+      return { ok: true, elapsedSecs: elapsed };
+    }
+
+    case 'togglePauseFocusMode': {
+      const session = await getSession();
+      if (!session.focusMode) return { ok: false, error: 'focus mode not active' };
+      const newPaused = !session.focusPaused;
+      await setSession({ focusPaused: newPaused });
+      broadcastToAllTabs({ action: 'focusPausedChanged', paused: newPaused });
+      return { ok: true, paused: newPaused };
+    }
+
+    case 'getHotkey': {
+      const { customHotkey } = await getLocal();
+      return { ok: true, hotkey: customHotkey || 'Ctrl+Shift+F' };
+    }
+
+    case 'setHotkey': {
+      await setLocal({ customHotkey: msg.hotkey });
+      return { ok: true };
+    }
+
+    case 'getPauseHotkey': {
+      const { pauseHotkey } = await getLocal();
+      return { ok: true, hotkey: pauseHotkey || 'Ctrl+Shift+Space' };
+    }
+
+    case 'setPauseHotkey': {
+      await setLocal({ pauseHotkey: msg.hotkey });
       return { ok: true };
     }
 

@@ -37,6 +37,17 @@
     "128": "assets/icon-128.png"
   },
 
+  "commands": {
+    "toggle-focus-hotkey": {
+      "suggested_key": { "default": "Ctrl+Shift+F" },
+      "description": "Start/end focus mode"
+    },
+    "toggle-pause-hotkey": {
+      "suggested_key": { "default": "Ctrl+Shift+Space" },
+      "description": "Pause/resume focus mode"
+    }
+  },
+
   "web_accessible_resources": [
     {
       "resources": [
