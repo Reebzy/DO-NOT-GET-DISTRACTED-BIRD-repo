@@ -9,7 +9,6 @@ const DEFAULT_SESSION = {
   lastFocusTabId: null,
   pendingFirstNav: false,
   focusLossTime: null,
-  notifId: null,
   newWindowIds: [], // [windowId] windows created while focus mode was on
   focusStartTime: null,
   focusPaused: false,
@@ -97,7 +96,6 @@ async function enableFocusMode() {
     lastFocusTabId: activeTab?.id ?? null,
     pendingFirstNav,
     focusLossTime: null,
-    notifId: null,
     focusStartTime: Date.now(),
     focusPaused: false,
   });
@@ -113,16 +111,12 @@ async function enableFocusMode() {
 }
 
 async function disableFocusMode() {
-  const { notifId } = await getSession();
-  if (notifId) chrome.notifications.clear(notifId);
-
   await setSession({
     focusMode: false,
     focusTabs: [],
     lastFocusTabId: null,
     pendingFirstNav: false,
     focusLossTime: null,
-    notifId: null,
     newWindowIds: [],
     focusStartTime: null,
     focusPaused: false,
@@ -178,7 +172,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     console.log('[DGDB] wins focused:', wins.map(w => `${w.id}:${w.focused}`).join(', '));
     if (wins.some(w => w.focused)) return;
 
-    console.log('[DGDB] confirmed left Chrome — creating notification');
+    console.log('[DGDB] confirmed left Chrome');
 
     // Focus truly lost to another application
     const lossTime = Date.now();
@@ -189,30 +183,19 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
       chrome.tabs.sendMessage(ft.tabId, { action: 'startTitleFlash' }).catch(() => {});
     }
 
-    // OS notification
-    const notifId = 'dgdb-focus-loss-' + Date.now();
-    await chrome.notifications.create(notifId, {
-      type: 'basic',
-      iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
-      title: 'DONT GET DISTRACTED BIRD',
-      message: 'YOU GOT DISTRACTED WHAT ARE YOU DOING GET BACK HERE DONT DO IT',
-      requireInteraction: true,
-    }).catch(err => console.warn('[DGDB] notification error:', err));
-    await setSession({ notifId });
     await addLog('left window');
 
   } else {
     // Focus returned (FM-03)
-    const { focusLossTime, notifId } = session;
+    const { focusLossTime } = session;
     const awayMs = focusLossTime ? Date.now() - focusLossTime : 0;
     const awaySecs = Math.round(awayMs / 1000);
 
-    // Stop title flash and dismiss notification
+    // Stop title flash
     for (const ft of session.focusTabs) {
       chrome.tabs.sendMessage(ft.tabId, { action: 'stopTitleFlash' }).catch(() => {});
     }
-    if (notifId) chrome.notifications.clear(notifId);
-    await setSession({ focusLossTime: null, notifId: null });
+    await setSession({ focusLossTime: null });
 
     // Inject return overlay into the active focus tab
     const lastTabId = session.lastFocusTabId;
