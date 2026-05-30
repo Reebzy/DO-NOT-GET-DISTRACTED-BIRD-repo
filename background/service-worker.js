@@ -188,13 +188,19 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     if (after.notifId) chrome.notifications.clear(after.notifId);
     const notifId = 'dgdb-focus-loss-' + Date.now();
     console.log('[DGDB] left Chrome at', new Date().toLocaleTimeString(), '— firing notification');
-    await chrome.notifications.create(notifId, {
+    const createdId = await chrome.notifications.create(notifId, {
       type: 'basic',
       iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
       title: 'DONT GET DISTRACTED BIRD',
       message: 'YOU GOT DISTRACTED WHAT ARE YOU DOING GET BACK HERE DONT DO IT',
       requireInteraction: true,
-    }).catch(err => console.warn('[DGDB] notification error:', err));
+    }).catch(err => { console.warn('[DGDB] notification error:', err); return null; });
+    console.log('[DGDB] create returned id:', createdId);
+    // Probe: does Chrome actually hold this notification in its registry?
+    setTimeout(async () => {
+      const all = await chrome.notifications.getAll().catch(() => ({}));
+      console.log('[DGDB] notifications in registry after 1s:', Object.keys(all));
+    }, 1000);
     await setSession({ notifId });
     await addLog('left window');
 
