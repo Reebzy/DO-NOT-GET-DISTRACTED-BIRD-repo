@@ -157,11 +157,15 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     // explicitly for an open popup context first.
     const popupContexts = await chrome.runtime.getContexts({ contextTypes: ['POPUP'] })
       .catch(() => []);
+    console.log('[DGDB] popupContexts:', popupContexts.length);
     if (popupContexts.length > 0) return;
 
     // Also guard against transient WINDOW_ID_NONE when switching between Chrome windows
     const wins = await chrome.windows.getAll({ populate: false });
+    console.log('[DGDB] wins focused:', wins.map(w => `${w.id}:${w.focused}`).join(', '));
     if (wins.some(w => w.focused)) return;
+
+    console.log('[DGDB] confirmed left Chrome — creating notification');
 
     // Focus truly lost to another application
     const lossTime = Date.now();
