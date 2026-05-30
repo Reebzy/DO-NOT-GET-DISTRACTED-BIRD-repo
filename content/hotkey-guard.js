@@ -125,15 +125,22 @@
     // Not dismissible by clicking outside — only via buttons (NFR-D-09)
   }
 
+  // ── Keepalive ping ───────────────────────────────────────────────
+  // Content scripts run in the page process, not the service worker, so they
+  // survive SW suspension. Pinging every 20s keeps the SW awake continuously
+  // while a focus tab is loaded — sendMessage (not a port) is bfcache-safe.
+  let _keepAliveInterval = setInterval(() => {
+    chrome.runtime.sendMessage({ action: 'keepalive' }).catch(() => {});
+  }, 20000);
+
   // ── Message listener ────────────────────────────────────────────
-  // Service-worker liveness is handled by chrome.alarms in the background; no
-  // content-script keepalive is needed here (a port-based one broke when pages
-  // entered the bfcache, spamming runtime.lastError).
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'startTitleFlash') startTitleFlash();
     if (msg.action === 'stopTitleFlash') stopTitleFlash();
     if (msg.action === 'focusOff') {
       stopTitleFlash();
+      clearInterval(_keepAliveInterval);
+      _keepAliveInterval = null;
       window.__dgdbGuardActive = false;
     }
   });

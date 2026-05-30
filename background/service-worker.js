@@ -572,6 +572,9 @@ async function handleMessage(msg, sender) {
       return { ok: true };
     }
 
+    case 'keepalive':
+      return { ok: true };
+
     default:
       return { ok: false, error: 'unknown action' };
   }
