@@ -82,7 +82,7 @@
     // Headline
     const headline = document.getElementById('headline');
     if (type === 'tab') {
-      headline.textContent = "That's not your focus tab.";
+      headline.textContent = "YOU GOT DISTRACTED BIRD SAYS NO!";
     } else {
       headline.innerHTML = `You're leaving<br>${esc(dest)}.`;
     }
