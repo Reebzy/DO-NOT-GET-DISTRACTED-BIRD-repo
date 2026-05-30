@@ -10,6 +10,7 @@ const DEFAULT_SESSION = {
   pendingFirstNav: false,
   focusLossTime: null,
   notifId: null,
+  newWindowIds: [], // [windowId] windows created while focus mode was on
 };
 
 const DEFAULT_LOCAL = {
@@ -113,6 +114,7 @@ async function disableFocusMode() {
     pendingFirstNav: false,
     focusLossTime: null,
     notifId: null,
+    newWindowIds: [],
   });
 
   await setBadge(false);
@@ -194,6 +196,34 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     }
 
     await addLog('returned to window', `away ${awaySecs}s`);
+
+    // Check if the currently active tab in this window is a non-focus tab
+    // (user may have Alt+Tabbed to a window with a non-focus tab already active)
+    const [activeTab] = await chrome.tabs.query({ active: true, windowId });
+    if (activeTab) {
+      const isFocusTab = session.focusTabs.some(ft => ft.tabId === activeTab.id);
+      if (!isFocusTab && activeTab.url && !activeTab.url.startsWith('chrome-extension://')) {
+        if (activeTab.url.startsWith('chrome://') && !isNewTabPage(activeTab.url)) return;
+
+        // Show interstitial for the non-focus tab that's now active
+        const { countdownSecs } = await getLocal();
+        const lastTabId = session.lastFocusTabId;
+        const returnUrl = activeTab.url || '';
+
+        const params = new URLSearchParams({
+          type: 'tab',
+          tabTitle: activeTab.title || 'this tab',
+          returnUrl,
+          focusTabId: String(lastTabId || ''),
+          countdown: String(countdownSecs),
+          tabId: String(activeTab.id),
+        });
+        const interstitialUrl = chrome.runtime.getURL(`interstitial/interstitial.html?${params}`);
+        chrome.tabs.update(activeTab.id, { url: interstitialUrl }).catch(() => {});
+
+        await addLog('tab blocked (window focus)', activeTab.title || activeTab.url || 'unknown tab');
+      }
+    }
   }
 });
 
@@ -276,6 +306,33 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   if (!session.focusMode) return;
 
   const isFocusTab = session.focusTabs.some(ft => ft.tabId === details.tabId);
+
+  // If it's a non-focus tab trying to navigate, show interstitial
+  if (!isFocusTab && !details.url.startsWith('chrome-extension://')) {
+    if (details.url.startsWith('chrome://') && !isNewTabPage(details.url)) return;
+
+    const tab = await chrome.tabs.get(details.tabId).catch(() => null);
+    if (!tab) return;
+
+    const { countdownSecs } = await getLocal();
+    const lastTabId = session.lastFocusTabId;
+    const returnUrl = tab.url || '';
+
+    const params = new URLSearchParams({
+      type: 'tab',
+      tabTitle: tab.title || 'this tab',
+      returnUrl,
+      focusTabId: String(lastTabId || ''),
+      countdown: String(countdownSecs),
+      tabId: String(details.tabId),
+    });
+    const interstitialUrl = chrome.runtime.getURL(`interstitial/interstitial.html?${params}`);
+    chrome.tabs.update(details.tabId, { url: interstitialUrl }).catch(() => {});
+
+    await addLog('navigation blocked (non-focus tab)', details.url);
+    return;
+  }
+
   if (!isFocusTab) return;
 
   const destDomain = normalizeDomain(details.url);
@@ -319,7 +376,24 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   await addLog('url blocked', `→ ${destDomain}`);
 });
 
-// ── Block Ctrl+T (new tab) during focus mode ─────────────────────
+// ── Window tracking ───────────────────────────────────────────────
+
+chrome.windows.onCreated.addListener(async (window) => {
+  const session = await getSession();
+  if (!session.focusMode) return;
+  // Track this window as "new" so we can close it if only the interstitial appears
+  const newWindowIds = [...(session.newWindowIds || []), window.id];
+  await setSession({ newWindowIds });
+});
+
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  const session = await getSession();
+  // Remove from tracking if it was closed
+  const newWindowIds = (session.newWindowIds || []).filter(id => id !== windowId);
+  await setSession({ newWindowIds });
+});
+
+// ── Tab blocking during focus mode ──────────────────────────────────
 
 chrome.tabs.onCreated.addListener(async (tab) => {
   const session = await getSession();
@@ -344,27 +418,6 @@ chrome.tabs.onCreated.addListener(async (tab) => {
   const interstitialUrl = chrome.runtime.getURL(`interstitial/interstitial.html?${params}`);
   chrome.tabs.update(tab.id, { url: interstitialUrl }).catch(() => {});
   await addLog('tab blocked', 'new tab');
-});
-
-// ── Block Ctrl+N (new window) during focus mode ───────────────────
-
-chrome.windows.onCreated.addListener(async (window) => {
-  const session = await getSession();
-  if (!session.focusMode) return;
-  if (window.type !== 'normal') return;
-
-  let focusWindowId = null;
-  if (session.lastFocusTabId) {
-    const focusTab = await chrome.tabs.get(session.lastFocusTabId).catch(() => null);
-    if (focusTab) {
-      if (focusTab.windowId === window.id) return;
-      focusWindowId = focusTab.windowId;
-    }
-  }
-
-  chrome.windows.remove(window.id).catch(() => {});
-  if (focusWindowId) chrome.windows.update(focusWindowId, { focused: true }).catch(() => {});
-  await addLog('window blocked', 'new window');
 });
 
 // Also inject hotkey guard when tabs finish loading
@@ -453,14 +506,42 @@ async function handleMessage(msg, sender) {
     }
 
     case 'goBack': {
-      // Restore this tab to its previous URL
-      if (sender.tab?.id && msg.returnUrl) {
+      // Check if the interstitial is in a newly created window
+      let shouldCloseWindow = false;
+      let focusWindowId = null;
+      const session = await getSession();
+
+      if (msg.focusTabId && sender.tab?.windowId) {
+        const focusTab = await chrome.tabs.get(msg.focusTabId).catch(() => null);
+        if (focusTab && focusTab.windowId !== sender.tab.windowId) {
+          focusWindowId = focusTab.windowId;
+          // Close the window only if it was created during this focus session
+          if ((session.newWindowIds || []).includes(sender.tab.windowId)) {
+            shouldCloseWindow = true;
+          }
+        }
+      }
+
+      // Restore this tab to its previous URL (only if staying in same window)
+      if (!shouldCloseWindow && sender.tab?.id && msg.returnUrl) {
         chrome.tabs.update(sender.tab.id, { url: msg.returnUrl }).catch(() => {});
       }
+
       // Switch back to the last active focus tab (tab variant only)
       if (msg.focusTabId) {
         chrome.tabs.update(msg.focusTabId, { active: true }).catch(() => {});
       }
+
+      // Bring the focus window to the foreground
+      if (focusWindowId) {
+        chrome.windows.update(focusWindowId, { focused: true }).catch(() => {});
+      }
+
+      // Close the interstitial window if it was newly created
+      if (shouldCloseWindow && sender.tab?.windowId) {
+        chrome.windows.remove(sender.tab.windowId).catch(() => {});
+      }
+
       return { ok: true };
     }
 
