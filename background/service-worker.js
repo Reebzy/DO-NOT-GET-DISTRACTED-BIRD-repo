@@ -144,6 +144,10 @@ function broadcastToAllTabs(msg) {
 
 // ── FM-02: Window focus loss ──────────────────────────────────────
 
+// Fixed notification ID: re-creating with the same ID updates the single
+// notification instead of stacking duplicates, and lets us reliably clear it.
+const FOCUS_LOSS_NOTIF_ID = 'dgdb-focus-loss';
+
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   const session = await getSession();
   if (!session.focusMode) return;
@@ -168,29 +172,31 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     }
 
     // OS notification
-    const notifId = 'dgdb-focus-loss-' + Date.now();
-    await chrome.notifications.create(notifId, {
+    await chrome.notifications.create(FOCUS_LOSS_NOTIF_ID, {
       type: 'basic',
       iconUrl: chrome.runtime.getURL('assets/icon-48.png'),
       title: 'DONT GET DISTRACTED BIRD',
       message: 'YOU GOT DISTRACTED WHAT ARE YOU DOING GET BACK HERE DONT DO IT',
       requireInteraction: true,
     }).catch(err => console.warn('[DGDB] notification error:', err));
-    await setSession({ notifId });
     await addLog('left window');
 
   } else {
-    // Focus returned (FM-03)
-    const { focusLossTime, notifId } = session;
+    // Focus returned (FM-03) — always clear the notification, even if we never
+    // recorded the matching loss (self-heals a missed WINDOW_ID_NONE event).
+    chrome.notifications.clear(FOCUS_LOSS_NOTIF_ID);
+
+    const { focusLossTime } = session;
     const awayMs = focusLossTime ? Date.now() - focusLossTime : 0;
     const awaySecs = Math.round(awayMs / 1000);
 
-    // Stop title flash and dismiss notification
+    // Stop title flash
     for (const ft of session.focusTabs) {
       chrome.tabs.sendMessage(ft.tabId, { action: 'stopTitleFlash' }).catch(() => {});
     }
-    if (notifId) chrome.notifications.clear(notifId);
     await setSession({ focusLossTime: null, notifId: null });
+
+    if (focusLossTime == null) return; // no loss recorded — nothing more to do
 
     // Inject return overlay into the active focus tab
     const lastTabId = session.lastFocusTabId;
@@ -350,6 +356,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }).catch(() => {});
 });
 
+// ── Keepalive ─────────────────────────────────────────────────────
+// Content scripts hold open a 'dgdb-keepalive' port while Focus Mode is on.
+// An open port keeps the service worker alive so it is awake when
+// chrome.windows.onFocusChanged fires (otherwise the notification is missed).
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === 'dgdb-keepalive') {
+    port.onDisconnect.addListener(() => { /* reconnected by content script */ });
+  }
+});
+
 // ── Message handler ───────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -497,9 +513,6 @@ async function handleMessage(msg, sender) {
       }
       return { ok: true };
     }
-
-    case 'keepalive':
-      return { ok: true };
 
     default:
       return { ok: false, error: 'unknown action' };
