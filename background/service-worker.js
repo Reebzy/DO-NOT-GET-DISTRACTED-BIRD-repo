@@ -251,16 +251,14 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 
   const { countdownSecs } = await getLocal();
   const lastTabId = session.lastFocusTabId;
-  let returnUrl = '';
-  if (lastTabId) {
-    const lastTab = await chrome.tabs.get(lastTabId).catch(() => null);
-    returnUrl = lastTab?.url || '';
-  }
+  // returnUrl is where THIS tab should return to (its own URL before the interstitial)
+  const returnUrl = tab.url || '';
 
   const params = new URLSearchParams({
     type: 'tab',
     tabTitle: tab.title || 'this tab',
     returnUrl,
+    focusTabId: String(lastTabId || ''),
     countdown: String(countdownSecs),
     tabId: String(tabId),
   });
@@ -415,20 +413,13 @@ async function handleMessage(msg, sender) {
     }
 
     case 'goBack': {
-      // Interstitial: go back to returnUrl
+      // Restore this tab to its previous URL
       if (sender.tab?.id && msg.returnUrl) {
         chrome.tabs.update(sender.tab.id, { url: msg.returnUrl }).catch(() => {});
-        // Re-mark as focus tab if it was one
-        const session = await getSession();
-        const wasFocus = session.focusTabs.some(ft => ft.tabId === sender.tab.id);
-        if (!wasFocus) {
-          const returnDomain = normalizeDomain(msg.returnUrl);
-          // Check if returnUrl belongs to a focus domain
-          const focusDomains = session.focusTabs.map(ft => normalizeDomain(ft.url));
-          if (focusDomains.includes(returnDomain)) {
-            // Fine, they're going back
-          }
-        }
+      }
+      // Switch back to the last active focus tab (tab variant only)
+      if (msg.focusTabId) {
+        chrome.tabs.update(msg.focusTabId, { active: true }).catch(() => {});
       }
       return { ok: true };
     }
