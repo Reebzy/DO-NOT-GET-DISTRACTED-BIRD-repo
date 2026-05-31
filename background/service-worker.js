@@ -12,6 +12,7 @@ const DEFAULT_SESSION = {
   newWindowIds: [], // [windowId] windows created while focus mode was on
   focusStartTime: null,
   focusPaused: false,
+  timedFocusEndTime: null, // absolute ms timestamp to auto-end focus, or null when untimed
 };
 
 const DEFAULT_LOCAL = {
@@ -19,8 +20,21 @@ const DEFAULT_LOCAL = {
   countdownSecs: 5,
   customHotkey: 'Ctrl+Shift+F',
   pauseHotkey: 'Ctrl+Shift+Space',
+  timedFocusEnabled: false, // auto-end focus mode after timedFocusMinutes
+  timedFocusMinutes: 15,    // duration for timed focus mode
   log: [],            // [{time, event, detail}] max 200
 };
+
+const TIMED_FOCUS_ALARM = 'timedFocusEnd';
+
+// Sanitize a free-text minute entry into a valid positive integer (1–1440).
+// Empty / non-numeric input falls back to the 15-minute default.
+function clampMinutes(v) {
+  if (v === '' || v == null) return 15;
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return 15;
+  return Math.min(1440, Math.max(1, n));
+}
 
 async function getSession() {
   const data = await chrome.storage.session.get(DEFAULT_SESSION);
@@ -90,6 +104,12 @@ async function enableFocusMode() {
     }
   }
 
+  // Timed focus mode: snapshot the deadline at start so later setting changes
+  // don't disturb a running session.
+  const { timedFocusEnabled, timedFocusMinutes } = await getLocal();
+  const timedMins = clampMinutes(timedFocusMinutes);
+  const timedFocusEndTime = timedFocusEnabled ? Date.now() + timedMins * 60 * 1000 : null;
+
   await setSession({
     focusMode: true,
     focusTabs,
@@ -98,10 +118,19 @@ async function enableFocusMode() {
     focusLossTime: null,
     focusStartTime: Date.now(),
     focusPaused: false,
+    timedFocusEndTime,
   });
 
   await setBadge(true);
   await addLog('session started', focusTabs[0]?.url || 'pending first navigation');
+
+  if (timedFocusEndTime) {
+    // Alarm is the reliable backstop that fires even if the worker is suspended
+    // and no tab is polling. The widget poll (getElapsedTime) ends it precisely
+    // on time when a focus tab is open.
+    await chrome.alarms.create(TIMED_FOCUS_ALARM, { when: timedFocusEndTime }).catch(() => {});
+    await addLog('timed focus armed', `${timedMins} min`);
+  }
 
   // Inject content scripts into all existing tabs
   await injectContentScripts();
@@ -110,7 +139,7 @@ async function enableFocusMode() {
   broadcastToAllTabs({ action: 'focusOn' });
 }
 
-async function disableFocusMode() {
+async function disableFocusMode(reason = '') {
   await setSession({
     focusMode: false,
     focusTabs: [],
@@ -120,13 +149,89 @@ async function disableFocusMode() {
     newWindowIds: [],
     focusStartTime: null,
     focusPaused: false,
+    timedFocusEndTime: null,
   });
 
+  await chrome.alarms.clear(TIMED_FOCUS_ALARM).catch(() => {});
   await setBadge(false);
-  await addLog('session ended');
+  await addLog('session ended', reason);
 
   // Notify all tabs to remove content script state
   broadcastToAllTabs({ action: 'focusOff' });
+}
+
+// ── Timed focus auto-end ──────────────────────────────────────────
+// Called by the alarm (reliable backstop) and the widget poll (precise). The in-flight
+// flag is set synchronously before any await, so concurrent triggers — many tabs polling
+// the same expired deadline, or the alarm racing a poll — end the session exactly once.
+let timedEndInProgress = false;
+
+async function triggerTimedFocusEnd() {
+  if (timedEndInProgress) return;
+  timedEndInProgress = true;
+  try {
+    const session = await getSession();
+    if (!session.focusMode || !session.timedFocusEndTime) return;
+
+    // Capture tabs to notify before disabling clears the session.
+    const targets = [];
+    const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+    if (activeTab?.id) targets.push(activeTab.id);
+    for (const ft of session.focusTabs || []) {
+      if (ft.tabId && !targets.includes(ft.tabId)) targets.push(ft.tabId);
+    }
+
+    await disableFocusMode('timer complete');
+    await notifyFocusEnded(targets);
+  } finally {
+    timedEndInProgress = false;
+  }
+}
+
+async function notifyFocusEnded(targetTabIds) {
+  if (!(await hasHostAccess())) return;
+  for (const tabId of targetTabIds) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab || !tab.url) continue;
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) continue;
+    chrome.scripting.executeScript({
+      target: { tabId },
+      func: showFocusEndedOverlay,
+    }).catch(() => {});
+  }
+}
+
+// Injected function for the "focus mode ended" notification (runs in page context)
+function showFocusEndedOverlay() {
+  if (document.getElementById('dgdb-focus-ended-overlay')) return;
+
+  const el = document.createElement('div');
+  el.id = 'dgdb-focus-ended-overlay';
+  el.style.cssText = `
+    position:fixed;right:18px;bottom:18px;z-index:2147483646;
+    background:#f4f1ea;color:#100d0b;border-left:3px solid #c41a1a;
+    padding:12px 16px;display:flex;align-items:center;gap:11px;border-radius:3px;
+    box-shadow:0 2px 2px rgba(16,13,11,.20);font-family:Archivo,system-ui,sans-serif;
+    max-width:320px;animation:dgdb-end-in 120ms ease;
+  `;
+  const style = document.createElement('style');
+  style.textContent = '@keyframes dgdb-end-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}';
+  document.head.appendChild(style);
+
+  const birdSVG = `<svg width="28" height="28" viewBox="0 0 240 240" aria-hidden="true">
+    <path d="M150 18 L139 43 L167 31 C181 72 190 112 182 151 L181 156 L231 207 L167 197 C150 193 131 189 117 181 C103 173 92 157 86 135 C83 125 82 118 85 110 L56 117 L18 107 L58 97 C92 68 116 30 150 18 Z" fill="#c41a1a"/>
+    <path d="M58 97 C78 84 92 80 99 84 C103 100 101 110 92 118 L56 117 Z" fill="#100d0b"/>
+    <path d="M122 110 L196 130 L168 170 L146 138 Z" fill="#8f1010"/>
+    <path d="M101 88 L108 93 L101 98 L95 93 Z" fill="#f4f1ea"/>
+  </svg>`;
+
+  el.innerHTML = birdSVG + `
+    <div>
+      <div style="font-family:'Archivo Expanded',Archivo,sans-serif;font-weight:800;font-size:13px;letter-spacing:.02em;">Time's up.</div>
+      <div style="font-family:'JetBrains Mono',monospace;color:#c41a1a;font-size:11px;margin-top:2px;">Focus mode ended.</div>
+    </div>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
 }
 
 // Host access is requested at runtime (optional_host_permissions). Content-script
@@ -468,6 +573,14 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+// ── Timed focus alarm ────────────────────────────────────────────
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === TIMED_FOCUS_ALARM) {
+    triggerTimedFocusEnd().catch(err => console.error('DGDB timed focus end error:', err));
+  }
+});
+
 // ── Message handler ───────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -532,6 +645,19 @@ async function handleMessage(msg, sender) {
     case 'setCountdown': {
       await setLocal({ countdownSecs: msg.secs });
       return { ok: true };
+    }
+
+    case 'setTimedFocus': {
+      const patch = {};
+      if (typeof msg.enabled === 'boolean') patch.timedFocusEnabled = msg.enabled;
+      if (msg.minutes != null) patch.timedFocusMinutes = clampMinutes(msg.minutes);
+      if (Object.keys(patch).length > 0) await setLocal(patch);
+      const local = await getLocal();
+      return {
+        ok: true,
+        timedFocusEnabled: local.timedFocusEnabled,
+        timedFocusMinutes: local.timedFocusMinutes,
+      };
     }
 
     case 'clearLog': {
@@ -640,10 +766,25 @@ async function handleMessage(msg, sender) {
 
     case 'getElapsedTime': {
       const session = await getSession();
+
+      // Timed focus: end precisely when the deadline passes (a focus tab is polling us).
+      if (session.focusMode && session.timedFocusEndTime && Date.now() >= session.timedFocusEndTime) {
+        await triggerTimedFocusEnd();
+        return { ok: true, elapsedSecs: 0, timed: true, remainingSecs: 0, ended: true };
+      }
+
       const elapsed = session.focusMode && session.focusStartTime && !session.focusPaused
         ? Math.floor((Date.now() - session.focusStartTime) / 1000)
         : 0;
-      return { ok: true, elapsedSecs: elapsed };
+
+      let timed = false;
+      let remainingSecs = null;
+      if (session.focusMode && session.timedFocusEndTime) {
+        timed = true;
+        remainingSecs = Math.max(0, Math.ceil((session.timedFocusEndTime - Date.now()) / 1000));
+      }
+
+      return { ok: true, elapsedSecs: elapsed, timed, remainingSecs };
     }
 
     case 'togglePauseFocusMode': {
@@ -685,6 +826,13 @@ async function handleMessage(msg, sender) {
 
 // ── Init ──────────────────────────────────────────────────────────
 
-// Set badge on install/startup
-chrome.runtime.onInstalled.addListener(() => setBadge(false));
-chrome.runtime.onStartup.addListener(() => setBadge(false));
+// Set badge on install/startup. Session state (incl. focusMode) resets on browser
+// restart, so drop any timed-focus alarm that outlived its session.
+chrome.runtime.onInstalled.addListener(() => {
+  setBadge(false);
+  chrome.alarms.clear(TIMED_FOCUS_ALARM).catch(() => {});
+});
+chrome.runtime.onStartup.addListener(() => {
+  setBadge(false);
+  chrome.alarms.clear(TIMED_FOCUS_ALARM).catch(() => {});
+});

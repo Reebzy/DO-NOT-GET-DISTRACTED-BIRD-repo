@@ -11,6 +11,16 @@
 <style>
   html,body{margin:0;padding:0;width:360px;background:#f4f1ea;overflow-x:hidden;}
 
+  /* ── Timed focus section (below ON/OFF) ── */
+  #timed-focus-section{border-bottom:1px solid var(--bone-3);padding:12px 15px;}
+  .tf-row{display:flex;align-items:center;gap:10px;}
+  .tf-row .tf-label{font-size:12.5px;font-weight:600;color:var(--ink);flex:1;}
+  .tf-minutes-row{display:flex;align-items:center;gap:10px;margin-top:11px;}
+  .tf-minutes-row .tf-min-label{font-size:12.5px;color:var(--ink);flex:1;}
+  .tf-minutes-row input{width:72px;text-align:center;font-family:var(--mono);font-size:12px;
+    padding:8px 9px;border:1px solid var(--bone-3);background:#fff;border-radius:3px;color:var(--ink);outline:none;}
+  .tf-minutes-row input:focus{border-color:var(--red);outline:2px solid var(--red);outline-offset:-1px;}
+
   /* ── Focus tabs section (always visible) ── */
   #focus-tabs-section{border-bottom:1px solid var(--bone-3);}
   #focus-tabs-section .p-label{margin:13px 15px 0;padding-bottom:0;}
@@ -63,6 +73,21 @@
       <span data-seg="on">ON</span>
       <span data-seg="off">OFF</span>
     </button>
+  </div>
+</div>
+
+<!-- ── Timed Focus mode (directly below ON/OFF) ── -->
+<div id="timed-focus-section">
+  <div class="tf-row">
+    <span class="tf-label">Timed focus mode</span>
+    <button class="toggle" id="timed-focus-toggle" data-on="false" role="switch" aria-label="Timed focus mode" aria-checked="false">
+      <span data-seg="on">ON</span>
+      <span data-seg="off">OFF</span>
+    </button>
+  </div>
+  <div class="tf-minutes-row" id="timed-focus-minutes-row" hidden>
+    <label class="tf-min-label" for="timed-focus-minutes">Minutes</label>
+    <input type="text" inputmode="numeric" id="timed-focus-minutes" value="15" autocomplete="off" spellcheck="false" aria-label="Focus duration in minutes">
   </div>
 </div>
 
