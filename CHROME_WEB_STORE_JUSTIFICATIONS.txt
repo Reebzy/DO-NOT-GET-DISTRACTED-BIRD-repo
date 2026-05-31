@@ -15,6 +15,9 @@ This permission allows the extension's content scripts to execute on tabs that u
 ===== WEBNAVIGATION =====
 The extension intercepts navigation attempts (e.g., clicking links, entering URLs) on non-focus tabs to show an interstitial page with a countdown timer. This prevents accidental distraction while allowing deliberate access if the user waits out the countdown.
 
+===== ALARMS =====
+The extension offers an optional "timed focus mode" that automatically ends a focus session after a user-chosen number of minutes. An alarm is used to reliably end the session and show the "focus mode ended" notification at the scheduled time, even if the background service worker has been suspended. No alarms are created unless the user enables timed focus mode.
+
 ===== OPTIONAL HOST PERMISSION (<all_urls>) =====
 This is declared as an OPTIONAL host permission, not granted at install time. It is requested at runtime — via a standard Chrome permission prompt — only when the user first starts a focus session. Once granted, it lets the extension inject its on-page focus widget (elapsed-time display, pause/end controls, the Ctrl+W last-tab guard, and the title-flash/return-overlay reminders) into the pages the user visits. A blanket scope is used because distraction websites are user-defined and unknowable in advance.
 

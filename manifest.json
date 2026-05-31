@@ -10,7 +10,8 @@
     "storage",
     "scripting",
     "activeTab",
-    "webNavigation"
+    "webNavigation",
+    "alarms"
   ],
   "optional_host_permissions": ["<all_urls>"],
 

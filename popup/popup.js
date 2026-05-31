@@ -9,6 +9,8 @@ let state = {
   countdownSecs: 5,
   customHotkey: 'Ctrl+Shift+F',
   pauseHotkey: 'Ctrl+Shift+Space',
+  timedFocusEnabled: false,
+  timedFocusMinutes: 15,
   log: [],
 };
 
@@ -33,6 +35,7 @@ function msg(payload) {
 
 function render() {
   renderToggle();
+  renderTimedFocus();
   renderFocusTabs();
   renderWhitelist();
   renderCountdown();
@@ -45,6 +48,22 @@ function renderToggle() {
   const on = state.focusMode;
   toggle.dataset.on = on ? 'true' : 'false';
   toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function renderTimedFocus() {
+  const toggle = document.getElementById('timed-focus-toggle');
+  const row = document.getElementById('timed-focus-minutes-row');
+  const input = document.getElementById('timed-focus-minutes');
+  const on = !!state.timedFocusEnabled;
+
+  toggle.dataset.on = on ? 'true' : 'false';
+  toggle.setAttribute('aria-checked', on ? 'true' : 'false');
+  row.hidden = !on;
+
+  // Don't clobber what the user is mid-typing.
+  if (document.activeElement !== input) {
+    input.value = String(state.timedFocusMinutes ?? 15);
+  }
 }
 
 function renderFocusTabs() {
@@ -171,6 +190,26 @@ function bindEvents() {
     }
   });
 
+  // Timed focus toggle
+  document.getElementById('timed-focus-toggle').addEventListener('click', async () => {
+    const next = !state.timedFocusEnabled;
+    state.timedFocusEnabled = next;
+    renderTimedFocus();
+    if (next) document.getElementById('timed-focus-minutes').focus();
+    await msg({ action: 'setTimedFocus', enabled: next });
+  });
+
+  // Timed focus minutes — free text, digits only, sanitized on commit
+  const minInput = document.getElementById('timed-focus-minutes');
+  minInput.addEventListener('input', () => {
+    minInput.value = minInput.value.replace(/[^0-9]/g, '');
+  });
+  minInput.addEventListener('change', commitTimedMinutes);
+  minInput.addEventListener('blur', commitTimedMinutes);
+  minInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') minInput.blur();
+  });
+
   // Remove focus tab
   document.getElementById('focus-tabs-list').addEventListener('click', async (e) => {
     const btn = e.target.closest('.tab-remove');
@@ -247,6 +286,15 @@ function bindEvents() {
     state.log = [];
     renderLog();
   });
+}
+
+async function commitTimedMinutes() {
+  const input = document.getElementById('timed-focus-minutes');
+  const resp = await msg({ action: 'setTimedFocus', minutes: input.value });
+  if (resp?.ok && typeof resp.timedFocusMinutes === 'number') {
+    state.timedFocusMinutes = resp.timedFocusMinutes;
+    input.value = String(resp.timedFocusMinutes);
+  }
 }
 
 async function addDomain() {
